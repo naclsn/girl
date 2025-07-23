@@ -38,7 +38,6 @@ class EventsFile(Base):
 
         id = f"{dirname}/{fileglob}"
 
-        # @_reload_guard(id)
         def adder(fn: FileHandler):
             if id in {id for l in self.__watched.values() for _, id, _ in l}:
                 raise ValueError("event already observed")
@@ -53,9 +52,15 @@ class EventsFile(Base):
 
         return adder
 
-    async def _file_watch_loop(self):
+    @staticmethod
+    async def _task(id: str, fn: FileHandler, path: Path):
+        async with World(id) as world:
+            await fn(world, path)
+
+    async def _loop(self):
         if self.__inotify is None:
             return
+
         try:
             _logger.info("file watcher hi")
 
@@ -72,23 +77,14 @@ class EventsFile(Base):
                 if not found:
                     continue
 
-                id, fn = found
-                async with World(id) as world:
-                    try:
-                        await fn(world, Path(event.path))
-                    except asyncio.CancelledError:
-                        raise
-                    except BaseException:
-                        _logger.error(f"handling event {event!r}", exc_info=True)
+                t = asyncio.create_task(EventsFile._task(*found, Path(event.path)))
+                # TODO: something of t
 
         finally:
-            # XXX: this a point that makes an app's run non (sequencially at least)
-            #      re-entrant, ie you'd have to re-create the app with re-applying the
-            #      decorators to be able to run it again; tho it likely doesn't matter
             self.__inotify.close()
 
     async def __aenter__(self):
-        self.__task = asyncio.create_task(self._file_watch_loop())
+        self.__task = asyncio.create_task(self._loop())
 
     async def __aexit__(self, *_):
         self.__task.cancel()

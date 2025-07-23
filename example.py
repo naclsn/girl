@@ -7,12 +7,14 @@ from aiohttp.web import Request
 from aiohttp.web import Response
 
 from girl import App
-from girl import Path
-from girl import World
+from girl import extra
+from girl.world import Path
+from girl.world import World
 
 logging.basicConfig(level=logging.NOTSET)
 
 app = App()
+app.file.event("./", "shell")(extra.shell)
 
 
 @app.web.event("localhost:8080", "GET", "/hi")

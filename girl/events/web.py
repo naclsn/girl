@@ -52,7 +52,6 @@ class EventsWeb(Base):
 
         id = f"{bind} {method} {path}"
 
-        # @_reload_guard(id)
         def adder(fn: HttpHandler):
             if id in self.__ids:
                 raise ValueError("event already observed")
@@ -103,7 +102,7 @@ class EventsWeb(Base):
 
     async def __aenter__(self):
         async def _serv(bind: _Bind, app: web.Application):
-            runn = web.AppRunner(app, handle_signals=True)  # ig so?
+            runn = web.AppRunner(app)
             await runn.setup()
             if isinstance(bind, tuple):
                 _logger.info(f"TCP site on {bind}")

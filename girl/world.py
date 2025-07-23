@@ -68,6 +68,9 @@ class Path(StdPath):
     def rename(self, target):
         return super().rename(target)
 
+    def unlink(self, missing_ok=False):
+        super().unlink(missing_ok)
+
 
 class _WorldFileProxy:
     __slots__ = ()
