@@ -1,0 +1,36 @@
+[build-system]
+build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core"]
+
+[tool.isort]
+force_single_line = true
+profile = "black"
+reverse_relative = true
+skip_gitignore = true
+
+[tool.poetry]
+authors = ["celest <celestin.grenier@mhcomm.fr>"]
+description = ""
+name = "girl"
+readme = "README.md"
+version = "0.0.1"
+
+[tool.poetry.dependencies]
+aiohttp = "^3.12.13"
+asyncinotify = "^4.2.1"
+isort = "^6.0.1"
+python = "^3.12"
+
+[tool.poetry.group.ci]
+optional = true
+
+[tool.poetry.group.ci.dependencies]
+#coverage = "^7.8.0"
+isort = "^6.0.1"
+#pytest = "^7.4.4"
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+black = "^25.1.0"
