@@ -1,26 +1,27 @@
+#!/usr/bin/env python3
+
 import asyncio
 import logging
 
-from aiohttp.web import Response
 from aiohttp.web import Request
+from aiohttp.web import Response
 
 from girl import App
 from girl import Path
 from girl import World
 
-
 logging.basicConfig(level=logging.NOTSET)
+
 app = App()
-BIND = "localhost:8080"
 
 
-@app.event_web(BIND, "GET", "/hi")
-async def hi(world: World, req: Request):
+@app.web.event("localhost:8080", "GET", "/hi")
+async def hi(_world: World, _req: Request):
     return Response(text="hello")
 
 
-@app.event_web(BIND, "GET", "/wait")
-async def wait(world: World, req: Request):
+@app.web.event("localhost:8080", "GET", "/wait")
+async def wait(_world: World, req: Request):
     txt = req.query["for"]
     match txt[-1:]:
         case "h":
@@ -35,15 +36,15 @@ async def wait(world: World, req: Request):
     return Response(text=f"{delay}s")
 
 
-@app.event_file("./", "move.me")
-async def moveme(world: World, file: Path):
+@app.file.event("./", "move.me")
+async def moveme(_world: World, file: Path):
     where = file.read_text().strip()
     assert where
     print("mv", file, where)
     file.rename(where)
 
 
-@app.event_file("./", "ohce")
+@app.file.event("./", "ohce")
 async def ohce(_world: World, file: Path):
     r, w = await asyncio.open_unix_connection(file)
     # r, w = await asyncio.open_connection(file)
@@ -51,7 +52,7 @@ async def ohce(_world: World, file: Path):
         w.write("".join(reversed(list(line.decode().strip()))).encode() + b"\n")
 
 
-@app.event_file("./", "*")
+@app.file.event("./", "*")
 async def anyfile(_world: World, file: Path):
     print("hay!", file, type(file), repr(file))
 

@@ -1,11 +1,13 @@
-import aiohttp
 from pathlib import Path as StdPath
 from pathlib import PurePath
 from sys import version_info
+from types import TracebackType
 from typing import Callable
 from typing import Concatenate
 from typing import ParamSpec
 from typing import TypeVar
+
+import aiohttp
 
 
 class World:
@@ -15,11 +17,19 @@ class World:
 
     def __init__(self, id: str):
         self.id = id
-        self.web = _WorldWebProxy(aiohttp.ClientSession())
+        self.web = _WorldWebProxy()
         self.file = _WorldFileProxy()
         self.share = ...  # set[tuple[str, ...]]  # wrapped as to be write-once
 
-    async def _close(self):
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None = None,
+        exc_value: BaseException | None = None,
+        traceback: TracebackType | None = None,
+    ):
         await self.web._inner.close()
 
 
@@ -37,8 +47,10 @@ def _proxies(_wrapped: Callable[Concatenate[SelfInner, Params], Ret]) -> Callabl
 
 
 class _WorldWebProxy:
-    def __init__(self, inner: aiohttp.ClientSession):
-        self._inner = inner
+    __slots__ = ("_inner",)
+
+    def __init__(self):
+        self._inner = aiohttp.ClientSession()
 
     @_proxies(aiohttp.ClientSession.request)
     def request(self, method, url, **kwargs):
@@ -46,6 +58,8 @@ class _WorldWebProxy:
 
 
 class Path(StdPath):
+    __slots__ = ()
+
     def read_text(self, encoding=None, errors=None, newline=None):
         if (3, 13) < version_info:
             return super().read_text(encoding, errors, newline)
@@ -56,5 +70,7 @@ class Path(StdPath):
 
 
 class _WorldFileProxy:
+    __slots__ = ()
+
     def __call__(self, *path_bits: str | PurePath):
         return Path(*path_bits)

@@ -1,5 +1,4 @@
 from . import app
-from . import typedefs
 from . import world
 from .app import App
 from .world import Path
@@ -10,6 +9,5 @@ __all__ = (
     "Path",
     "World",
     "app",
-    "typedefs",
     "world",
 )
