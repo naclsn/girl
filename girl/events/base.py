@@ -4,11 +4,8 @@ from pathlib import PurePath
 from types import TracebackType
 from typing import Callable
 from typing import TypeVar
-from typing import TypeVarTuple
 
-_Ret_ = TypeVar("_Ret_")
-_Params_ = TypeVarTuple("_Params_")
-_Fn_ = TypeVar("_Fn_")
+_Fn_ = TypeVar("_Fn_", bound=Callable[..., object])
 _Bind = tuple[str, int] | PurePath
 
 

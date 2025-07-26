@@ -57,7 +57,8 @@ class _WorldWebProxy:
         return self._inner.request(method, url, **kwargs)
 
 
-class Path(StdPath):
+# pathlib being trash in py 3.10, see https://stackoverflow.com/a/61689743
+class Path(type(StdPath())):
     __slots__ = ()
 
     def read_text(self, encoding=None, errors=None, newline=None):

@@ -5,7 +5,6 @@ requires = ["poetry-core"]
 [tool.isort]
 force_single_line = true
 profile = "black"
-reverse_relative = true
 skip_gitignore = true
 
 [tool.poetry]
@@ -18,15 +17,14 @@ version = "0.0.1"
 [tool.poetry.dependencies]
 aiohttp = "^3.12.13"
 asyncinotify = "^4.2.1"
-isort = "^6.0.1"
-python = "^3.12"
+python = "^3.10"
 
 [tool.poetry.group.ci]
 optional = true
 
 [tool.poetry.group.ci.dependencies]
-#coverage = "^7.8.0"
-#pytest = "^7.4.4"
+coverage = "^7.8.0"
+pytest = "^7.4.4"
 
 [tool.poetry.group.dev]
 optional = true

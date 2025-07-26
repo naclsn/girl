@@ -32,4 +32,7 @@ class App:
                 _logger.info("Stopping")
 
     def run(self):
-        asyncio.run(self())
+        try:
+            asyncio.run(self())
+        except KeyboardInterrupt:
+            pass
