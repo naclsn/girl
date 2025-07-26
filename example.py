@@ -12,9 +12,12 @@ from girl.world import Path
 from girl.world import World
 
 logging.basicConfig(level=logging.NOTSET)
+logger = logging.getLogger(__name__)
 
 app = App()
-app.file.event("./", "shell")(extra.shell)
+
+app.file.event(Path(__file__).parent, "shell")(extra.shell)
+app.web.event("localhost:8091", "GET", "/shell")(extra.shell)
 
 
 @app.web.event("localhost:8080", "GET", "/hi")
@@ -40,23 +43,24 @@ async def wait(_world: World, req: Request):
 
 @app.file.event("./", "move.me")
 async def moveme(_world: World, file: Path):
+    logger.info("got move.me file")
     where = file.read_text().strip()
     assert where
-    print("mv", file, where)
+    logger.info(f"mv {file} {where}")
     file.rename(where)
 
 
 @app.file.event("./", "ohce")
 async def ohce(_world: World, file: Path):
     r, w = await asyncio.open_unix_connection(file)
-    # r, w = await asyncio.open_connection(file)
+    file.unlink()
     async for line in r:
         w.write("".join(reversed(list(line.decode().strip()))).encode() + b"\n")
 
 
 @app.file.event("./", "*")
 async def anyfile(_world: World, file: Path):
-    print("hay!", file, type(file), repr(file))
+    logger.info("hay! %s %s %s", file, type(file), repr(file))
 
 
 app.run()

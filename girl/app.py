@@ -17,15 +17,19 @@ class App:
     async def __call__(self):
         """ """
         async with self.file, self.web:
-            _logger.info("running")
+            _logger.info("Running")
             try:
+                h = 0
                 while True:
                     await asyncio.sleep(3600)
-                    _logger.info("alive")
-            except KeyboardInterrupt:
+                    h += 1
+                    _logger.info(f"Alive ~{h}h")
+
+            except (KeyboardInterrupt, asyncio.CancelledError):
                 pass
+
             finally:
-                _logger.info("stopping")
+                _logger.info("Stopping")
 
     def run(self):
         asyncio.run(self())

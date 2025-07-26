@@ -3,6 +3,7 @@ import inspect
 from collections import defaultdict
 from collections.abc import AsyncGenerator
 from collections.abc import Awaitable
+from functools import wraps
 from logging import getLogger
 from pathlib import Path as StdPath
 from pathlib import PurePath
@@ -28,8 +29,8 @@ MethodStr = Literal[
 ]
 
 HttpHandler = (
-    Callable[[World, web.Request], Awaitable[web.Response]]
-    | Callable[[World, web.Request], AsyncGenerator[web.Response]]
+    Callable[[World, web.Request], Awaitable[web.StreamResponse]]
+    | Callable[[World, web.Request], AsyncGenerator[web.StreamResponse]]
 )
 
 _Bind = tuple[str, int] | PurePath
@@ -39,8 +40,8 @@ _logger = getLogger(__name__)
 
 class EventsWeb(Base):
     def __init__(self):
-        self.__apps = defaultdict[_Bind, web.Application](web.Application)
-        self.__ids = set[str]()
+        self._apps = defaultdict[_Bind, web.Application](web.Application)
+        self._ids = set[str]()
 
     def event(self, bind: str | PurePath, method: MethodStr, path: str):
         """ """
@@ -53,13 +54,14 @@ class EventsWeb(Base):
         id = f"{bind} {method} {path}"
 
         def adder(fn: HttpHandler):
-            if id in self.__ids:
+            if id in self._ids:
                 raise ValueError("event already observed")
 
             ret_fn = fn  # HACK: circumvent type narrowing being dum
 
             if inspect.isasyncgenfunction(fn):
 
+                @wraps(fn)
                 async def wrapper(req: web.Request):
                     world = await World(id).__aenter__()
                     gen = fn(world, req)
@@ -77,6 +79,7 @@ class EventsWeb(Base):
 
             elif inspect.iscoroutinefunction(fn):
 
+                @wraps(fn)
                 async def wrapper(req: web.Request):
                     async with World(id) as world:
                         res: web.Response = await fn(world, req)
@@ -85,8 +88,8 @@ class EventsWeb(Base):
             else:
                 raise TypeError("handler should be async def with optionally a yield")
 
-            self.__apps[bindd].router.add_route(method, path, wrapper)
-            self.__ids.add(id)
+            self._apps[bindd].router.add_route(method, path, wrapper)
+            self._ids.add(id)
             return ret_fn
 
         return adder
@@ -104,15 +107,22 @@ class EventsWeb(Base):
         async def _serv(bind: _Bind, app: web.Application):
             runn = web.AppRunner(app)
             await runn.setup()
+
             if isinstance(bind, tuple):
-                _logger.info(f"TCP site on {bind}")
+                site_log = f"TCP site on {bind}"
                 await web.TCPSite(runn, *bind).start()
             else:
-                _logger.info(f"Unix site on {bind}")
+                site_log = f"Unix site on {bind}"
                 await web.UnixSite(runn, str(bind)).start()
+
+            _logger.info(site_log)
+            for r in app.router.routes():
+                path = "(no resource)" if r.resource is None else r.resource.canonical
+                _logger.info(f"    {r.method} {path}")
+
             return runn
 
-        self.__runners = await asyncio.gather(*(_serv(*p) for p in self.__apps.items()))
+        self._runners = await asyncio.gather(*(_serv(*p) for p in self._apps.items()))
 
     async def __aexit__(self, *_):
-        await asyncio.gather(*(runn.cleanup() for runn in self.__runners))
+        await asyncio.gather(*(runn.cleanup() for runn in self._runners))
