@@ -144,14 +144,34 @@ async def shell(_world: World, arg: web.Request | Path, /) -> web.StreamResponse
 
     elif isinstance(arg, Path):
         file = arg
-        try:
-            r, w = await asyncio.open_unix_connection(file)
-        finally:
-            file.unlink()
-        _logger.info("unix socket connection established")
+        if file.is_socket():
+            try:
+                r, w = await asyncio.open_unix_connection(file)
+            finally:
+                file.unlink()
+            _logger.info("unix socket connection established")
 
-        async for line in r:
-            line = line.decode().strip()
-            w.writelines(l.encode() + b"\n" for l in await _clirpc(line))
+            async for line in r:
+                line = line.decode().strip()
+                w.writelines(l.encode() + b"\n" for l in await _clirpc(line))
 
-        _logger.info("unix socket connection terminated")
+            w.close()
+            _logger.info("unix socket connection terminated")
+
+        elif file.is_fifo():
+            r = asyncio.StreamReader()
+            protocol = asyncio.StreamReaderProtocol(r)
+            transport, _ = await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, file)
+            _logger.info("shell commands through fifo")
+
+            async for line in r:
+                line = line.decode().strip()
+                await _clirpc(line)
+
+            transport.close()
+            assert not "implemented"
+
+        else:
+            _logger.info("shell commands through regular file")
+            for line in file.read_text().splitlines():
+                await _clirpc(line)
