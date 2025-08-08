@@ -11,9 +11,9 @@ from typing import overload
 from aiohttp import WSMsgType
 from aiohttp import web
 
-from . import procs
 from ..world import Path
 from ..world import World
+from . import procs
 
 _logger = getLogger(__name__)
 
@@ -159,9 +159,13 @@ async def shell(_world: World, arg: web.Request | Path, /) -> web.StreamResponse
             _logger.info("unix socket connection terminated")
 
         elif file.is_fifo():
-            r = asyncio.StreamReader()
-            protocol = asyncio.StreamReaderProtocol(r)
-            transport, _ = await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, file)
+            try:
+                r = asyncio.StreamReader()
+                protocol = asyncio.StreamReaderProtocol(r)
+                loop = asyncio.get_event_loop()
+                transport, _ = await loop.connect_read_pipe(lambda: protocol, file)
+            finally:
+                file.unlink()
             _logger.info("shell commands through fifo")
 
             async for line in r:
@@ -173,5 +177,7 @@ async def shell(_world: World, arg: web.Request | Path, /) -> web.StreamResponse
 
         else:
             _logger.info("shell commands through regular file")
-            for line in file.read_text().splitlines():
-                await _clirpc(line)
+            with file.open() as untracked:
+                file.unlink()
+                for line in untracked:
+                    await _clirpc(line)

@@ -11,9 +11,9 @@ from asyncinotify import Inotify
 from asyncinotify import Mask
 from asyncinotify import Watch
 
-from .base import Base
 from ..world import Path
 from ..world import World
+from .base import Base
 
 FileHandler = Callable[[World, Path], Awaitable[None]]
 

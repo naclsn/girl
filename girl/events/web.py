@@ -12,8 +12,8 @@ from typing import Literal
 
 from aiohttp import web
 
-from .base import Base
 from ..world import World
+from .base import Base
 
 MethodStr = Literal[
     "*",

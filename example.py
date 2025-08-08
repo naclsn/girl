@@ -25,6 +25,12 @@ async def hi(_world: World, _req: Request):
     return Response(text="hello")
 
 
+@app.web.event("localhost:8080", "GET", "/lost")
+async def lost(world: World, _req: Request):
+    html = await world.web.request_text("GET", "http://perdu.com")
+    return Response(text=html)
+
+
 @app.web.event("localhost:8080", "GET", "/wait")
 async def wait(_world: World, req: Request):
     txt = req.query["for"]
