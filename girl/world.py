@@ -1,7 +1,6 @@
 import json
 from pathlib import Path as StdPath
 from pathlib import PurePath
-from sys import version_info
 from types import TracebackType
 from typing import Callable
 from typing import Concatenate
@@ -99,7 +98,8 @@ class Path(type(StdPath())):
     _world: World
 
     def read_bytes(self):
-        if self._world._pacifier:
+        _w: World | None = getattr(self, "_world", None)
+        if _w and _w._pacifier:
             key = str(self.resolve())
             assert not "done", key
             return bytes()
@@ -109,7 +109,8 @@ class Path(type(StdPath())):
         return r
 
     def write_bytes(self, data: bytes):
-        if self._world._pacifier:
+        _w: World | None = getattr(self, "_world", None)
+        if _w and _w._pacifier:
             key = str(self.resolve())
             assert not "done", key
             return int()

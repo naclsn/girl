@@ -58,8 +58,8 @@ class EventsFile(Base):
 
         return adder
 
-    async def _take_make(self, id: str, fn: FileHandler, path: Path):
-        async with World(id) as world:
+    async def _task_make(self, id: str, fn: FileHandler, path: Path):
+        async with World(id, False) as world:
             await fn(world, path)
 
     def _task_done(self, task: asyncio.Task[None]):
@@ -101,7 +101,7 @@ class EventsFile(Base):
                 if not found:
                     continue
 
-                task = asyncio.create_task(self._take_make(*found, Path(event.path)))
+                task = asyncio.create_task(self._task_make(*found, Path(event.path)))
                 self._running.add(task)
                 task.add_done_callback(self._task_done)
 

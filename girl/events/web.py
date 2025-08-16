@@ -63,7 +63,7 @@ class EventsWeb(Base):
 
                 @wraps(fn)
                 async def wrapper(req: web.Request):
-                    world = await World(id).__aenter__()
+                    world = await World(id, False).__aenter__()
                     gen = fn(world, req)
                     try:
                         res: web.Response = await anext(gen)
@@ -81,7 +81,7 @@ class EventsWeb(Base):
 
                 @wraps(fn)
                 async def wrapper(req: web.Request):
-                    async with World(id) as world:
+                    async with World(id, False) as world:
                         res: web.Response = await fn(world, req)
                         return res
 

@@ -22,9 +22,6 @@ class Base(ABC):
     """ """
 
     @abstractmethod
-    def __init__(self): ...
-
-    @abstractmethod
     def event(self, *a: ..., **ka: ...) -> Callable[[_Fn_], _Fn_]:
         """ """
 

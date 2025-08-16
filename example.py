@@ -33,7 +33,7 @@ async def lost(world: World, _req: Request):
 
 @app.web.event("localhost:8080", "GET", "/wait")
 async def wait(_world: World, req: Request):
-    txt = req.query["for"]
+    txt = req.query.get("for", "")
     match txt[-1:]:
         case "h":
             delay = 3600 * float(txt[:-1])
@@ -69,23 +69,5 @@ async def anyfile(_world: World, file: Path):
     logger.info("hay! %s %s %s", file, type(file), repr(file))
 
 
-app.run()
-
-
-"""
 if "__main__" == __name__:
-    parse = ArgumentParser()
-    parse.add_argument("command", choices={"run", "shell"})
-    args = parse.parse_args()
-
-    match args.command:
-        case "run":
-            app.run()
-        case "shell":
-            patapatate
-            # that, or, something that feels cool is to just have, like, normal events?
-            # app.event_web(...)(app.remoteadmin) # (but other name) index.html + rest api
-            # app.event_file(...)(app.remoteadmin) # a socket or pipe or idk idcare
-        case _:
-            pass
-"""
+    app.run()
