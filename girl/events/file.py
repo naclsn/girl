@@ -11,9 +11,11 @@ from asyncinotify import Inotify
 from asyncinotify import Mask
 from asyncinotify import Watch
 
+from .. import app
 from ..world import Path
 from ..world import World
 from .base import Base
+from .base import Handler
 
 FileHandler = Callable[[World, Path], Awaitable[None]]
 
@@ -30,7 +32,10 @@ _MASK = Mask.CREATE | Mask.CLOSE_WRITE | Mask.EXCL_UNLINK | Mask.ONLYDIR
 
 
 class EventsFile(Base):
-    def __init__(self):
+    def __init__(self, app: "app.App"):
+        self._app = app
+        self._handlers = dict[str, Handler[FileHandler]]()
+
         self._inotify: Inotify | None = None
         self._watched = defaultdict[Watch, list[_FileCbInfo]](list)
 
@@ -45,7 +50,7 @@ class EventsFile(Base):
         id = f"{dirname}/{fileglob}"
 
         def adder(fn: FileHandler):
-            if id in {id for l in self._watched.values() for _, id, _ in l}:
+            if id in self._handlers:
                 raise ValueError("event already observed")
 
             if self._inotify is None:
@@ -54,12 +59,19 @@ class EventsFile(Base):
             search = (watch for watch in self._watched if dirname == watch.path)
             watch = next(search, None) or self._inotify.add_watch(dirname, _MASK)
             self._watched[watch].append((fileglob, id, fn))
+            self._handlers[id] = Handler(id, fn)
             return fn
 
         return adder
 
+    def handlers(self):
+        return set(self._handlers)
+
+    def handler(self, id: str):
+        return self._handlers[id]
+
     async def _task_make(self, id: str, fn: FileHandler, path: Path):
-        async with World(id, False) as world:
+        async with World(self._app, id, False) as world:
             await fn(world, path)
 
     def _task_done(self, task: asyncio.Task[None]):

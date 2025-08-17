@@ -11,8 +11,8 @@ class App:
     """ """
 
     def __init__(self, name: str | None = None):
-        self.file = EventsFile()
-        self.web = EventsWeb()
+        self.file = EventsFile(self)
+        self.web = EventsWeb(self)
 
     async def __call__(self):
         """ """

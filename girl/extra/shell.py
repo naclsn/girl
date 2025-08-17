@@ -8,6 +8,7 @@ from typing import overload
 from aiohttp import WSMsgType
 from aiohttp import web
 
+from ..app import App
 from ..world import Path
 from ..world import World
 from . import procs
@@ -22,15 +23,13 @@ async def shell(world: World, req: web.Request, /) -> web.StreamResponse: ...
 async def shell(world: World, file: Path, /) -> None: ...
 
 
-async def _rpc(req: str, io: Interact) -> object:
+async def _rpc(req: str, app: App, io: Interact) -> object:
     rpc: list[str] = json.loads(req)
     name, *args = rpc
-    proc = getattr(procs, name)
-    r = await proc(*args, io=io)
-    return r
+    return await getattr(procs, name)(*args, app=app, io=io)
 
 
-async def shell(_world: World, arg: web.Request | Path, /) -> web.StreamResponse | None:
+async def shell(world: World, arg: web.Request | Path, /) -> web.StreamResponse | None:
     """ """
 
     if isinstance(arg, web.Request):
@@ -44,7 +43,7 @@ async def shell(_world: World, arg: web.Request | Path, /) -> web.StreamResponse
                 match msg.type:
                     case WSMsgType.BINARY:
                         io = Interact(res.receive_bytes, res.send_bytes)
-                        await res.send_json(await _rpc(str(msg.data), io))
+                        await res.send_json(await _rpc(str(msg.data), world.app, io))
                     case WSMsgType.ERROR:
                         _logger.warning("websocket exception %s", res.exception())
                     case _:
@@ -68,7 +67,8 @@ async def shell(_world: World, arg: web.Request | Path, /) -> web.StreamResponse
             io = Interact(r.readline, lambda data: w.write(data) or w.drain())
             try:
                 async for line in r:
-                    w.write(json.dumps(await _rpc(line.decode().strip(), io)).encode())
+                    line = line.decode().strip()
+                    w.write(json.dumps(await _rpc(line, world.app, io)).encode())
                     await w.drain()
 
             finally:
@@ -77,11 +77,10 @@ async def shell(_world: World, arg: web.Request | Path, /) -> web.StreamResponse
 
         elif file.is_fifo():
             try:
-                r = asyncio.StreamReader()
                 pipe = file.open()
-                transport, _ = await asyncio.get_event_loop().connect_read_pipe(
-                    lambda: asyncio.StreamReaderProtocol(r), pipe
-                )
+                r = asyncio.StreamReader()
+                f = lambda: asyncio.StreamReaderProtocol(r)
+                transport, _ = await asyncio.get_event_loop().connect_read_pipe(f, pipe)
                 _logger.info("shell commands through fifo")
             finally:
                 file.unlink()
@@ -90,7 +89,7 @@ async def shell(_world: World, arg: web.Request | Path, /) -> web.StreamResponse
             try:
                 async for line in r:
                     line = line.decode().strip()
-                    ans = json.dumps(await _rpc(line, ix))
+                    ans = json.dumps(await _rpc(line, world.app, ix))
                     _logger.info("query: %s, ans: %s", line.strip(), ans)
 
             finally:

@@ -3,11 +3,14 @@
 import asyncio
 from codeop import compile_command
 from collections.abc import Awaitable
+from fnmatch import fnmatch
 from functools import wraps
 from logging import getLogger
 from traceback import format_exception
 from typing import Callable
 from typing import TypeVar
+
+from ..app import App
 
 _logger = getLogger(__name__)
 
@@ -16,8 +19,13 @@ _Afn_ = TypeVar("_Afn_", bound=Callable[..., Awaitable[object]])
 
 def _proc(rfn: _Afn_) -> _Afn_:
     @wraps(rfn)
-    async def wfn(*a: ..., io: Interact):
-        return await (rfn(*a, io=io) if "io" in rfn.__annotations__ else rfn(*a))
+    async def wfn(*a: ..., app: App, io: Interact):
+        ka = dict[str, object]()
+        if "app" in rfn.__annotations__:
+            ka["app"] = app
+        if "io" in rfn.__annotations__:
+            ka["io"] = io
+        return await rfn(*a, **ka)
 
     setattr(wfn, "_is_proc", True)
     return wfn
@@ -65,19 +73,19 @@ async def a(a: str, n: int = 1):
 
 
 @_proc
-async def interact(*, io: Interact):
+async def interact(*, app: App, io: Interact):
     def inner():
         io.write("*interactive*\n")
 
-        locs = globs = dict[str, object]()
+        locs = globs = dict[str, object](app=app, io=io)
         while ...:
             try:
                 io.writeflush(">>> ")
                 src = io.readline()
-                sym = "eval"
                 try:
+                    sym = "eval"
                     co = compile_command(src, symbol=sym)
-                except SyntaxError:  # not an expression
+                except SyntaxError:  # not an expression, maybe statement
                     sym = "exec"
                     co = compile_command(src, symbol=sym)
                 if co is None:  # partial source; requires more
@@ -94,6 +102,7 @@ async def interact(*, io: Interact):
                 assert co
                 if (r := eval(co, locs, globs)) is not None:
                     io.writeflush(repr(r) + "\n")
+                    locs["_"] = r
             except SystemExit:
                 break
             except BaseException as exc:
@@ -102,3 +111,22 @@ async def interact(*, io: Interact):
         io.write(f"now exiting interact...\n")
 
     await asyncio.to_thread(inner)
+
+
+@_proc
+async def lsevents(filt: str = "all:*", /, *, app: App):
+    """
+    file:*
+    web:*
+    """
+    kind, found, pat = filt.partition(":")
+    if not found:
+        pat = filt
+    return sorted(
+        name
+        for name in {
+            *(app.file.handlers() if kind in {"all", "file"} else ()),
+            *(app.web.handlers() if kind in {"all", "web"} else ()),
+        }
+        if fnmatch(name, pat)
+    )

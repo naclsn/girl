@@ -9,14 +9,17 @@ from typing import TypeVar
 
 import aiohttp
 
+from . import app
+
 
 class World:
     """ """
 
-    __slots__ = ("id", "_pacifier", "web", "file", "share")
+    __slots__ = ("app", "id", "_pacifier", "web", "file", "share")
 
-    def __init__(self, id: str, pacifier: bool):
-        self.id = id
+    def __init__(self, app: "app.App", id: str, pacifier: bool):
+        self.app = app
+        self.id = id  # WIP: event/handler id, insufficient as a run-id
         self._pacifier = pacifier
         self.web = _WorldWebProxy(self)
         self.file = _WorldFileProxy(self)

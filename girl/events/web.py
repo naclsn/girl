@@ -12,8 +12,10 @@ from typing import Literal
 
 from aiohttp import web
 
+from .. import app
 from ..world import World
 from .base import Base
+from .base import Handler
 
 MethodStr = Literal[
     "*",
@@ -39,9 +41,12 @@ _logger = getLogger(__name__)
 
 
 class EventsWeb(Base):
-    def __init__(self):
+    def __init__(self, app: "app.App"):
+        self._app = app
+        self._handlers = dict[str, Handler[HttpHandler]]()
+
         self._apps = defaultdict[_Bind, web.Application](web.Application)
-        self._ids = set[str]()
+        # self._ids = set[str]()
 
     def event(self, bind: str | PurePath, method: MethodStr, path: str):
         """ """
@@ -54,7 +59,7 @@ class EventsWeb(Base):
         id = f"{bind} {method} {path}"
 
         def adder(fn: HttpHandler):
-            if id in self._ids:
+            if id in self._handlers:
                 raise ValueError("event already observed")
 
             ret_fn = fn  # HACK: circumvent type narrowing being dum
@@ -63,7 +68,7 @@ class EventsWeb(Base):
 
                 @wraps(fn)
                 async def wrapper(req: web.Request):
-                    world = await World(id, False).__aenter__()
+                    world = await World(self._app, id, False).__aenter__()
                     gen = fn(world, req)
                     try:
                         res: web.Response = await anext(gen)
@@ -81,7 +86,7 @@ class EventsWeb(Base):
 
                 @wraps(fn)
                 async def wrapper(req: web.Request):
-                    async with World(id, False) as world:
+                    async with World(self._app, id, False) as world:
                         res: web.Response = await fn(world, req)
                         return res
 
@@ -89,10 +94,16 @@ class EventsWeb(Base):
                 raise TypeError("handler should be async def with optionally a yield")
 
             self._apps[bindd].router.add_route(method, path, wrapper)
-            self._ids.add(id)
+            self._handlers[id] = Handler(id, fn)
             return ret_fn
 
         return adder
+
+    def handlers(self):
+        return set(self._handlers)
+
+    def handler(self, id: str):
+        return self._handlers[id]
 
     @staticmethod
     async def _resume_in_background(gen: AsyncGenerator[object], world: World):

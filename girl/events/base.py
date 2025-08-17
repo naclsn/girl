@@ -1,12 +1,11 @@
 from abc import ABC
 from abc import abstractmethod
-from pathlib import PurePath
 from types import TracebackType
 from typing import Callable
+from typing import Generic
 from typing import TypeVar
 
 _Fn_ = TypeVar("_Fn_", bound=Callable[..., object])
-_Bind = tuple[str, int] | PurePath
 
 
 def _reload_guard(
@@ -18,11 +17,27 @@ def _reload_guard(
     return lambda adder: lambda fn: fn
 
 
+class Handler(Generic[_Fn_]):
+    __slots__ = ("id", "fn")
+
+    def __init__(self, id: str, fn: _Fn_):
+        self.id = id
+        self.fn = fn
+
+
 class Base(ABC):
     """ """
 
     @abstractmethod
     def event(self, *a: ..., **ka: ...) -> Callable[[_Fn_], _Fn_]:
+        """ """
+
+    @abstractmethod
+    def handlers(self) -> set[str]:
+        """ """
+
+    @abstractmethod
+    def handler(self, id: str) -> Handler[_Fn_]:
         """ """
 
     @abstractmethod
