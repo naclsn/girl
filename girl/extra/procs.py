@@ -1,38 +1,25 @@
 """A collection of managment procs."""
 
 import asyncio
-from code import InteractiveConsole
+from codeop import compile_command
 from collections.abc import Awaitable
 from functools import wraps
-from inspect import getfullargspec
 from logging import getLogger
+from traceback import format_exception
 from typing import Callable
 from typing import TypeVar
 
 _logger = getLogger(__name__)
 
-_TY_TL_TABLE: dict[type, Callable[[str], object]] = {
-    str: str,
-    int: int,
-    float: float,
-    list[str]: lambda s: s.split(","),
-    list[int]: lambda s: map(int, s.split(",")),
-    list[float]: lambda s: map(float, s.split(",")),
-}
 _Afn_ = TypeVar("_Afn_", bound=Callable[..., Awaitable[object]])
-_T_ = TypeVar("_T_")
 
 
 def _proc(rfn: _Afn_) -> _Afn_:
-    spec = getfullargspec(rfn)
-    # assert spec.annotations.keys() == set(spec.args), f"{rfn} missing hints"
-    # assert set(spec.annotations.values()) < _TY_TL_TABLE.keys(), f"{rfn} complex types"
-    setattr(rfn, "_rpc_params", spec.annotations)
-
     @wraps(rfn)
     async def wfn(*a: ..., io: Interact):
-        return await (rfn(*a, io=io) if "io" in spec.annotations else rfn(*a))
+        return await (rfn(*a, io=io) if "io" in rfn.__annotations__ else rfn(*a))
 
+    setattr(wfn, "_is_proc", True)
     return wfn
 
 
@@ -56,7 +43,14 @@ class Interact:
 
     def readline(self):
         fut = asyncio.run_coroutine_threadsafe(self.abreadline(), self._loop)
-        return fut.result().decode()
+        try:
+            return fut.result().decode()
+        except ConnectionError as exc:
+            raise EOFError from exc
+
+    def writeflush(self, data: str):
+        self.write(data)
+        self.flush()
 
     def flush(self):
         asyncio.run_coroutine_threadsafe(self.aflush(), self._loop).result()
@@ -66,61 +60,45 @@ class Interact:
 
 
 @_proc
-async def a(a: str):
-    return "coucou " + a
+async def a(a: str, n: int = 1):
+    return "coucou " + a * n
 
 
 @_proc
 async def interact(*, io: Interact):
-    class Interp(InteractiveConsole):
-        def write(self, data: str):
-            io.write(data)
-
-        def raw_input(self, prompt: str = ""):
-            if prompt:
-                io.write(prompt)
-            io.flush()
-            return io.readline()
-
-    # TODO: displayhook situation
-
-    try:
-        await asyncio.to_thread(Interp({"io": io}).interact, "*interactive*")
-    except SystemExit:
-        pass
-
-
-@_proc
-async def cmd(*, io: Interact):
-    from cmd import Cmd
-
-    class Da(Cmd):
-        use_rawinput = False
-
-        def do_echo(self, args: str):
-            self.stdout.write(f"{' '.join(args.split())}\n")
-
-        def do_exit(self, _: str):
-            return True
-
-        do_EOF = do_exit
-
-    await asyncio.to_thread(Da(stdin=io, stdout=io).cmdloop, "*cmd*")
-
-
-@_proc
-async def b(*, io: Interact):
-    import threading
-
     def inner():
-        print("inside", threading.current_thread())
-        print("reasding")
-        l = io.readline()
-        print("read, writin")
-        io.write(f"bidoof {l}")
-        print("wrote, fluhsin")
-        io.flush()
-        print("dslndsn")
+        io.write("*interactive*\n")
 
-    print("outside", threading.current_thread())
+        locs = globs = dict[str, object]()
+        while ...:
+            try:
+                io.writeflush(">>> ")
+                src = io.readline()
+                sym = "eval"
+                try:
+                    co = compile_command(src, symbol=sym)
+                except SyntaxError:  # not an expression
+                    sym = "exec"
+                    co = compile_command(src, symbol=sym)
+                if co is None:  # partial source; requires more
+                    for l in iter(lambda: io.writeflush("... ") or io.readline(), "\n"):
+                        src += l
+                    co = compile_command(src, symbol=sym)
+            except EOFError:
+                return
+            except SyntaxError as exc:
+                io.writeflush("".join(format_exception(exc)))
+                continue
+
+            try:
+                assert co
+                if (r := eval(co, locs, globs)) is not None:
+                    io.writeflush(repr(r) + "\n")
+            except SystemExit:
+                break
+            except BaseException as exc:
+                io.writeflush("".join(format_exception(exc)))
+
+        io.write(f"now exiting interact...\n")
+
     await asyncio.to_thread(inner)
