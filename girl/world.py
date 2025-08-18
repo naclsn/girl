@@ -15,12 +15,25 @@ from . import app
 class World:
     """ """
 
-    __slots__ = ("app", "id", "_pacifier", "web", "file", "share")
+    __slots__ = (
+        "app",
+        "id",
+        "runid",
+        "_counter",
+        "_pacifier",
+        "web",
+        "file",
+        "share",
+    )
 
     def __init__(self, app: "app.App", id: str, pacifier: bool):
         self.app = app
-        self.id = id  # WIP: event/handler id, insufficient as a run-id
+
+        self.id = id
+        self.runid: str = ...
+        self._counter = 0
         self._pacifier = pacifier
+
         self.web = _WorldWebProxy(self)
         self.file = _WorldFileProxy(self)
         self.share = ...  # set[tuple[str, ...]]  # wrapped as to be write-once
@@ -35,6 +48,7 @@ class World:
         traceback: TracebackType | None = None,
     ):
         await self.web._inner.close()
+        await self.app.store.flush(self)
 
 
 Params = ParamSpec("Params")

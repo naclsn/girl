@@ -8,6 +8,7 @@ from functools import wraps
 from logging import getLogger
 from traceback import format_exception
 from typing import Callable
+from typing import cast
 from typing import TypeVar
 
 from ..app import App
@@ -28,7 +29,8 @@ def _proc(rfn: _Afn_) -> _Afn_:
         return await rfn(*a, **ka)
 
     setattr(wfn, "_is_proc", True)
-    return wfn
+    r: ... = wfn
+    return r
 
 
 class Interact:
