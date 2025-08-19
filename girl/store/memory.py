@@ -1,5 +1,6 @@
-from .base import Base
 from collections import defaultdict
+
+from .base import Base
 
 
 class BackendMemory(Base):

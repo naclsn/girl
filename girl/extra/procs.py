@@ -3,13 +3,13 @@
 import asyncio
 from codeop import compile_command
 from collections.abc import Awaitable
-from fnmatch import fnmatch
+from fnmatch import fnmatchcase
 from functools import wraps
 from logging import getLogger
 from traceback import format_exception
 from typing import Callable
-from typing import cast
 from typing import TypeVar
+from typing import cast
 
 from ..app import App
 
@@ -118,17 +118,19 @@ async def interact(*, app: App, io: Interact):
 @_proc
 async def lsevents(filt: str = "all:*", /, *, app: App):
     """
+    cron:*
     file:*
     web:*
     """
     kind, found, pat = filt.partition(":")
     if not found:
-        pat = filt
+        kind, pat = "all", filt
     return sorted(
         name
         for name in {
+            *(app.cron.handlers() if kind in {"all", "cron"} else ()),
             *(app.file.handlers() if kind in {"all", "file"} else ()),
             *(app.web.handlers() if kind in {"all", "web"} else ()),
         }
-        if fnmatch(name, pat)
+        if fnmatchcase(name, pat)
     )

@@ -8,6 +8,7 @@ from typing import ParamSpec
 from typing import TypeVar
 
 import aiohttp
+from coolname import generate_slug
 
 from . import app
 
@@ -30,7 +31,7 @@ class World:
         self.app = app
 
         self.id = id
-        self.runid: str = ...
+        self.runid = generate_slug(3)
         self._counter = 0
         self._pacifier = pacifier
 

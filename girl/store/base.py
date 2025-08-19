@@ -1,6 +1,7 @@
 from abc import ABC
-from types import TracebackType
 from abc import abstractmethod
+from types import TracebackType
+
 from ..world import World
 
 _LoadedRun = dict[str, list[bytes]]

@@ -1,9 +1,10 @@
 import asyncio
 from logging import getLogger
 
-from .store import Store
+from .events import EventsCron
 from .events import EventsFile
 from .events import EventsWeb
+from .store import Store
 
 _logger = getLogger(__name__)
 
@@ -13,12 +14,13 @@ class App:
 
     def __init__(self):
         self.store = Store()
+        self.cron = EventsCron(self)
         self.file = EventsFile(self)
         self.web = EventsWeb(self)
 
     async def __call__(self):
         """ """
-        async with self.store, self.file, self.web:
+        async with self.store, self.cron, self.file, self.web:
             _logger.info("Running")
             try:
                 h = 0
