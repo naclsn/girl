@@ -17,8 +17,8 @@ version = "0.0.1"
 [tool.poetry.dependencies]
 aiohttp = "^3.12.13"
 asyncinotify = "^4.2.1"
-python = "^3.10"
 coolname = "^2.2.0"
+python = "^3.10"
 
 [tool.poetry.group.ci]
 optional = true

@@ -94,7 +94,7 @@ class EventsWeb(Base):
                 raise TypeError("handler should be async def with optionally a yield")
 
             self._apps[bindd].router.add_route(method, path, wrapper)
-            self._handlers[id] = Handler(id, fn)
+            self._handlers[id] = Handler(id, fn, EventsWeb._fake)
             return ret_fn
 
         return adder
@@ -104,6 +104,12 @@ class EventsWeb(Base):
 
     def handler(self, id: str):
         return self._handlers[id]
+
+    @staticmethod
+    async def _fake(world: World, payload: bytes, fn: HttpHandler):
+        assert not "done"
+        ...
+        await fn(world, ...)
 
     @staticmethod
     async def _resume_in_background(gen: AsyncGenerator[object], world: World):

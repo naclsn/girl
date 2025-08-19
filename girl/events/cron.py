@@ -4,7 +4,6 @@ from datetime import datetime
 from datetime import timedelta
 from logging import getLogger
 from typing import Callable
-from typing import Literal
 from typing import TypedDict
 
 from .. import app
@@ -98,7 +97,7 @@ class EventsCron(Base):
             if id in self._handlers:
                 raise ValueError("event already observed")
 
-            handler = Handler(id, fn)
+            handler = Handler(id, fn, EventsCron._fake)
             self._scheds.append((sched, handler))
             self._handlers[id] = handler
             return fn
@@ -110,6 +109,11 @@ class EventsCron(Base):
 
     def handler(self, id: str):
         return self._handlers[id]
+
+    @staticmethod
+    async def _fake(world: World, payload: bytes, fn: CronHandler):
+        _ = payload
+        await fn(world)
 
     async def _task_make(self, id: str, fn: CronHandler):
         async with World(self._app, id, False) as world:

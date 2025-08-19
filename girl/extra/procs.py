@@ -9,9 +9,9 @@ from logging import getLogger
 from traceback import format_exception
 from typing import Callable
 from typing import TypeVar
-from typing import cast
 
 from ..app import App
+from ..world import World
 
 _logger = getLogger(__name__)
 
@@ -126,11 +126,69 @@ async def lsevents(filt: str = "all:*", /, *, app: App):
     if not found:
         kind, pat = "all", filt
     return sorted(
-        name
-        for name in {
+        id
+        for id in {
             *(app.cron.handlers() if kind in {"all", "cron"} else ()),
             *(app.file.handlers() if kind in {"all", "file"} else ()),
             *(app.web.handlers() if kind in {"all", "web"} else ()),
         }
-        if fnmatchcase(name, pat)
+        if fnmatchcase(id, pat)
     )
+
+
+# _Perform_ = Literal["verbose", "breakpoint", "perform"]
+
+
+@_proc
+async def fake(
+    id: str,
+    payload: bytes | str,
+    perform: bool = False,
+    *,
+    app: App,
+    io: Interact,
+):
+    for ev in (app.cron, app.file, app.web):
+        if id in ev.handlers():
+            handler = ev.handler(id)
+            break
+    else:
+        raise ValueError(f"event handler for {id!r} not found")
+
+    if not isinstance(payload, bytes):
+        payload = payload.encode()
+
+    def inner():
+        assert not "done", "yet"
+        asyncio.run_coroutine_threadsafe(handler.fake(world, payload), loop).result()
+
+    loop = asyncio.get_event_loop()
+    async with World(app, id, perform and io) as world:
+        await asyncio.to_thread(inner)
+
+
+@_proc
+async def replay(
+    id: str,
+    runid: str,
+    perform: bool = False,
+    *,
+    app: App,
+    io: Interact,
+):
+    for ev in (app.cron, app.file, app.web):
+        if id in ev.handlers():
+            handler = ev.handler(id)
+            break
+    else:
+        raise ValueError(f"event handler for {id!r} not found")
+
+    payload = ...
+
+    def inner():
+        assert not "done", "yet"
+        asyncio.run_coroutine_threadsafe(handler.fake(world, payload), loop).result()
+
+    loop = asyncio.get_event_loop()
+    async with World(app, id, perform and io, runid=runid) as world:
+        await asyncio.to_thread(inner)

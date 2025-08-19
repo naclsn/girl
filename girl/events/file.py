@@ -19,7 +19,7 @@ from .base import Handler
 
 FileHandler = Callable[[World, Path], Awaitable[None]]
 
-_FileCbInfo = tuple[str, str, FileHandler]
+_PatAndId = tuple[str, str]
 
 _logger = getLogger(__name__)
 
@@ -37,7 +37,7 @@ class EventsFile(Base):
         self._handlers = dict[str, Handler[FileHandler]]()
 
         self._inotify: Inotify | None = None
-        self._watched = defaultdict[Watch, list[_FileCbInfo]](list)
+        self._watched = defaultdict[Watch, list[_PatAndId]](list)
 
     def event(self, dirname: str | PurePath, fileglob: str):
         """ """
@@ -58,8 +58,8 @@ class EventsFile(Base):
 
             search = (watch for watch in self._watched if dirname == watch.path)
             watch = next(search, None) or self._inotify.add_watch(dirname, _MASK)
-            self._watched[watch].append((fileglob, id, fn))
-            self._handlers[id] = Handler(id, fn)
+            self._watched[watch].append((fileglob, id))
+            self._handlers[id] = Handler(id, fn, EventsFile._fake)
             return fn
 
         return adder
@@ -70,8 +70,15 @@ class EventsFile(Base):
     def handler(self, id: str):
         return self._handlers[id]
 
+    @staticmethod
+    async def _fake(world: World, payload: bytes, fn: FileHandler):
+        path = Path(payload.decode())
+        path._world = world
+        await fn(world, path)
+
     async def _task_make(self, id: str, fn: FileHandler, path: Path):
         async with World(self._app, id, False) as world:
+            path._world = world
             await fn(world, path)
 
     def _task_done(self, task: asyncio.Task[None]):
@@ -91,7 +98,7 @@ class EventsFile(Base):
             watch = list = None
             for watch, list in self._watched.items():
                 _logger.info(f"Watching {watch.path}:")
-                for pat, _, _ in list:
+                for pat, _ in list:
                     _logger.info(f"    {pat}")
             del watch, list
 
@@ -105,8 +112,8 @@ class EventsFile(Base):
                     continue
 
                 search = (
-                    (id, fn)
-                    for pat, id, fn in self._watched[event.watch]
+                    (id, self._handlers[id].fn)
+                    for pat, id in self._watched[event.watch]
                     if fnmatch(str(event.name), pat)
                 )
                 found = next(search, None)

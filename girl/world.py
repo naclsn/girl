@@ -27,17 +27,17 @@ class World:
         "share",
     )
 
-    def __init__(self, app: "app.App", id: str, pacifier: bool):
+    def __init__(self, app: "app.App", id: str, pacifier: bool, *, runid: str = ""):
         self.app = app
 
         self.id = id
-        self.runid = generate_slug(3)
+        self.runid = runid or generate_slug(3)
         self._counter = 0
         self._pacifier = pacifier
 
-        self.web = _WorldWebProxy(self)
         self.file = _WorldFileProxy(self)
         self.share = ...  # set[tuple[str, ...]]  # wrapped as to be write-once
+        self.web = _WorldWebProxy(self)
 
     async def __aenter__(self):
         return self
@@ -52,16 +52,18 @@ class World:
         await self.app.store.flush(self)
 
 
-Params = ParamSpec("Params")
-RetInner = TypeVar("RetInner")
-RetProxy = TypeVar("RetProxy")
-SelfInner = TypeVar("SelfInner")
-SelfProxy = TypeVar("SelfProxy")
+_Params_ = ParamSpec("_Params_")
+_RetInner_ = TypeVar("_RetInner_")
+_RetProxy_ = TypeVar("_RetProxy_")
+_SelfInner_ = TypeVar("_SelfInner_")
+_SelfProxy_ = TypeVar("_SelfProxy_")
 
 
-def _proxies(_proxied: Callable[Concatenate[SelfInner, Params], RetInner]) -> Callable[
-    [Callable[Concatenate[SelfProxy, Params], RetProxy]],
-    Callable[Concatenate[SelfProxy, Params], RetProxy],
+def _proxies(
+    _proxied: Callable[Concatenate[_SelfInner_, _Params_], _RetInner_],
+) -> Callable[
+    [Callable[Concatenate[_SelfProxy_, _Params_], _RetProxy_]],
+    Callable[Concatenate[_SelfProxy_, _Params_], _RetProxy_],
 ]:
     return lambda proxy: proxy
 
@@ -112,12 +114,11 @@ class Path(type(StdPath())):
         * :meth:`write_json`
     """
 
-    __slots__ = ("_world",)
-    _world: World
+    __slots__ = ()
+    _world: World | None = None
 
     def read_bytes(self):
-        _w: World | None = getattr(self, "_world", None)
-        if _w and _w._pacifier:
+        if self._world and self._world._pacifier:
             key = str(self.resolve())
             assert not "done", key
             return bytes()
@@ -127,8 +128,7 @@ class Path(type(StdPath())):
         return r
 
     def write_bytes(self, data: bytes):
-        _w: World | None = getattr(self, "_world", None)
-        if _w and _w._pacifier:
+        if self._world and self._world._pacifier:
             key = str(self.resolve())
             assert not "done", key
             return int()
@@ -150,12 +150,11 @@ class Path(type(StdPath())):
 
 
 class _WorldFileProxy:
-    __slots__ = ("_world",)
+    __slots__ = ("_world", "RunPath")
 
     def __init__(self, world: World):
         self._world = world
+        self.RunPath = type("RunPath", (Path,), {"_world": self._world})
 
     def __call__(self, *path_bits: str | PurePath):
-        r = Path(*path_bits)
-        r._world = self._world
-        return r
+        return self.RunPath(*path_bits)
