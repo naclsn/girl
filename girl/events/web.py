@@ -1,9 +1,9 @@
 import asyncio
 import inspect
+import json as jsonn
 from collections import defaultdict
 from collections.abc import AsyncGenerator
 from collections.abc import Awaitable
-from functools import wraps
 from logging import getLogger
 from pathlib import Path as StdPath
 from pathlib import PurePath
@@ -16,6 +16,91 @@ from .. import app
 from ..world import World
 from .base import Base
 from .base import Handler
+
+_logger = getLogger(__name__)
+
+
+class Request:
+    __slots__ = ("_world", "rel_url", "match_info", "_head", "_body")
+
+    def __init__(
+        self,
+        world: World,
+        rel_url: ...,
+        match_info: dict[str, str],
+        head: dict[str, str],
+        body: bytes,
+    ):
+        self._world = world
+        self.rel_url = rel_url
+        self.match_info = match_info
+        self._head = head
+        self._body = body
+
+    @property
+    def body(self):
+        return self._body
+
+    @property
+    def text(self):
+        return self.body.decode()
+
+    @property
+    def json(self):
+        return jsonn.loads(self.text)
+
+    def header(self, name: str, default: str | None = None, /):
+        return self._head.get(name.lower(), default)
+
+    _MISSING = object()
+
+    def respond(
+        self,
+        *,
+        body: bytes | None = None,
+        text: str | None = None,
+        json: object = _MISSING,
+        status: int = 200,
+        reason: str | None = None,
+        headers: dict[str, str] | None = None,
+    ):
+        if body is not None and text is not None and json is not Request._MISSING:
+            raise ValueError("only one of 'body', 'text' or 'json' must be given")
+        if json is not Request._MISSING:
+            text = jsonn.dumps(json)
+        if text is not None:
+            body = text.encode()
+        if body is None:
+            raise ValueError("at least one of 'body', 'text' or 'json' must be given")
+
+        # assert not "done", (self._world.app.store.store, (headers, body))
+        _logger.info("%r", (headers, body))
+        # self._world._trackorsomethingidkk(slkdjflsjdfsj)
+
+        return web.Response(body=body, status=status, reason=reason, headers=headers)
+
+    @classmethod
+    async def _from_aiohttp(cls, world: World, req: web.Request):
+        urli = (req.rel_url, req.match_info)
+        head = {k.lower(): v for k, v in req.headers.items()}
+        body = await req.read()
+
+        # assert not "done", (world.app.store.store, (urli, head, body))
+        _logger.info("%r", (urli, head, body))
+        # self._world._trackorsomethingidkk(slkdjflsjdfsj)
+
+        return cls(world, *urli, head, body)
+
+    # XXX: async? really? idk, jic-
+    @classmethod
+    async def _from_bytes(cls, world: World, payload: bytes):
+        return cls(world, ...)
+
+
+HttpHandler = (
+    Callable[[World, Request], Awaitable[web.StreamResponse]]
+    | Callable[[World, Request], AsyncGenerator[web.StreamResponse]]
+)
 
 MethodStr = Literal[
     "*",
@@ -30,14 +115,7 @@ MethodStr = Literal[
     "TRACE",
 ]
 
-HttpHandler = (
-    Callable[[World, web.Request], Awaitable[web.StreamResponse]]
-    | Callable[[World, web.Request], AsyncGenerator[web.StreamResponse]]
-)
-
 _Bind = tuple[str, int] | PurePath
-
-_logger = getLogger(__name__)
 
 
 class EventsWeb(Base):
@@ -46,7 +124,6 @@ class EventsWeb(Base):
         self._handlers = dict[str, Handler[HttpHandler]]()
 
         self._apps = defaultdict[_Bind, web.Application](web.Application)
-        # self._ids = set[str]()
 
     def event(self, bind: str | PurePath, method: MethodStr, path: str):
         """ """
@@ -66,10 +143,10 @@ class EventsWeb(Base):
 
             if inspect.isasyncgenfunction(fn):
 
-                @wraps(fn)
                 async def wrapper(req: web.Request):
                     world = await World(self._app, id, False).__aenter__()
-                    gen = fn(world, req)
+                    reqq = await Request._from_aiohttp(world, req)
+                    gen = fn(world, reqq)
                     try:
                         res: web.Response = await anext(gen)
                     except BaseException as e:
@@ -84,10 +161,10 @@ class EventsWeb(Base):
 
             elif inspect.iscoroutinefunction(fn):
 
-                @wraps(fn)
                 async def wrapper(req: web.Request):
                     async with World(self._app, id, False) as world:
-                        res: web.Response = await fn(world, req)
+                        reqq = await Request._from_aiohttp(world, req)
+                        res: web.Response = await fn(world, reqq)
                         return res
 
             else:
@@ -107,9 +184,15 @@ class EventsWeb(Base):
 
     @staticmethod
     async def _fake(world: World, payload: bytes, fn: HttpHandler):
-        assert not "done"
-        ...
-        await fn(world, ...)
+        req = await Request._from_bytes(world, payload)
+        if inspect.isasyncgenfunction(fn):
+            gen = fn(world, req)
+            res: web.Response = await anext(gen)
+            await anext(gen, None)
+            return res
+        elif inspect.iscoroutinefunction(fn):
+            return await fn(world, req)
+        assert not "reachable"
 
     @staticmethod
     async def _resume_in_background(gen: AsyncGenerator[object], world: World):

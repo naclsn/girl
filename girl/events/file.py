@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections import defaultdict
 from collections.abc import Awaitable
 from fnmatch import fnmatch
@@ -12,16 +13,60 @@ from asyncinotify import Mask
 from asyncinotify import Watch
 
 from .. import app
-from ..world import Path
 from ..world import World
 from .base import Base
 from .base import Handler
 
-FileHandler = Callable[[World, Path], Awaitable[None]]
-
-_PatAndId = tuple[str, str]
-
 _logger = getLogger(__name__)
+
+
+# pathlib being trash in py 3.10, see https://stackoverflow.com/a/61689743
+class Path(type(StdPath())):
+    """
+
+    only the following accesses are tracked:
+        * :meth:`read_bytes`
+        * :meth:`read_text`
+        * :meth:`read_json`
+        * :meth:`write_bytes`
+        * :meth:`write_text`
+        * :meth:`write_json`
+    """
+
+    __slots__ = ()
+    _world: World | None = None
+
+    def read_bytes(self):
+        if self._world and self._world._pacifier:
+            key = str(self.resolve())
+            assert not "done", key
+            return bytes()
+
+        r = super().read_bytes()
+        # self._world._trackorsomethingidkk(key, r)
+        return r
+
+    def write_bytes(self, data: bytes):
+        if self._world and self._world._pacifier:
+            key = str(self.resolve())
+            assert not "done", key
+            return int()
+
+        # self._world._trackorsomethingidkk(key, data)
+        return super().write_bytes(data)
+
+    def read_text(self):
+        return self.read_bytes().decode()
+
+    def write_text(self, data: str):
+        return self.write_bytes(data.encode())
+
+    def read_json(self):
+        return json.loads(self.read_text())
+
+    def write_json(self, data: ...):
+        return self.write_text(json.dumps(data))
+
 
 # - Having only CREATE can/will trigger too early (not done writing yet).
 # - Having only CLOSE_WRITE misses eg fifo/socket (never closed until used).
@@ -29,6 +74,9 @@ _logger = getLogger(__name__)
 # So we have both but we test for file type; only regular files call handler
 # on CLOSE_WRITE, other (in fifo/socket/symlink/dir/dev..) on CREATE.
 _MASK = Mask.CREATE | Mask.CLOSE_WRITE | Mask.EXCL_UNLINK | Mask.ONLYDIR
+_PatAndId = tuple[str, str]
+
+FileHandler = Callable[[World, Path], Awaitable[None]]
 
 
 class EventsFile(Base):

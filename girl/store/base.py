@@ -43,8 +43,8 @@ class Base(ABC):
 class Store:
     """ """
 
-    def __init__(self):
-        self._backend: Base = ...
+    def __init__(self, backend: Base):
+        self._backend = backend
         self._ongoing = dict[tuple[str, str], _LoadedRun]()
 
     async def store(self, world: World, key: str, data: bytes):

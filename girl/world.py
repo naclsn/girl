@@ -1,5 +1,4 @@
 import json
-from pathlib import Path as StdPath
 from pathlib import PurePath
 from types import TracebackType
 from typing import Callable
@@ -101,60 +100,14 @@ class _WorldWebProxy:
         return json.loads(await self.request_text(method, url, **kwargs))
 
 
-# pathlib being trash in py 3.10, see https://stackoverflow.com/a/61689743
-class Path(type(StdPath())):
-    """
-
-    only the following accesses are tracked:
-        * :meth:`read_bytes`
-        * :meth:`read_text`
-        * :meth:`read_json`
-        * :meth:`write_bytes`
-        * :meth:`write_text`
-        * :meth:`write_json`
-    """
-
-    __slots__ = ()
-    _world: World | None = None
-
-    def read_bytes(self):
-        if self._world and self._world._pacifier:
-            key = str(self.resolve())
-            assert not "done", key
-            return bytes()
-
-        r = super().read_bytes()
-        # self._world._trackorsomethingidkk(key, r)
-        return r
-
-    def write_bytes(self, data: bytes):
-        if self._world and self._world._pacifier:
-            key = str(self.resolve())
-            assert not "done", key
-            return int()
-
-        # self._world._trackorsomethingidkk(key, data)
-        return super().write_bytes(data)
-
-    def read_text(self):
-        return self.read_bytes().decode()
-
-    def write_text(self, data: str):
-        return self.write_bytes(data.encode())
-
-    def read_json(self):
-        return json.loads(self.read_text())
-
-    def write_json(self, data: ...):
-        return self.write_text(json.dumps(data))
-
-
 class _WorldFileProxy:
     __slots__ = ("_world", "RunPath")
 
     def __init__(self, world: World):
+        from .events import file  # circular import...
+
         self._world = world
-        self.RunPath = type("RunPath", (Path,), {"_world": self._world})
+        self.RunPath = type("RunPath", (file.Path,), {"_world": self._world})
 
     def __call__(self, *path_bits: str | PurePath):
         return self.RunPath(*path_bits)

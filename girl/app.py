@@ -13,7 +13,9 @@ class App:
     """ """
 
     def __init__(self):
-        self.store = Store()
+        from .store import BackendMemory  # XXX: tmp wip
+
+        self.store = Store(BackendMemory())
         self.cron = EventsCron(self)
         self.file = EventsFile(self)
         self.web = EventsWeb(self)

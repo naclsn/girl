@@ -9,7 +9,7 @@ from aiohttp import WSMsgType
 from aiohttp import web
 
 from ..app import App
-from ..world import Path
+from ..events.file import Path
 from ..world import World
 from . import procs
 from .procs import Interact
