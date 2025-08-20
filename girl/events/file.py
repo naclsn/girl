@@ -42,30 +42,33 @@ class Path(type(StdPath())):
             assert not "done", key
             return bytes()
 
-        r = super().read_bytes()
-        # self._world._trackorsomethingidkk(key, r)
-        return r
+        data = super().read_bytes()
+        if self._world:
+            self._world.app.store.store(self._world, str(self.resolve()), data)
+        return data
 
     def write_bytes(self, data: bytes):
         if self._world and self._world._pacifier:
-            key = str(self.resolve())
-            assert not "done", key
-            return int()
+            # key = str(self.resolve())
+            # assert not "done", key
+            # return int()
+            return
 
-        # self._world._trackorsomethingidkk(key, data)
-        return super().write_bytes(data)
+        # if self._world:
+        #     self._world.app.store.store(self._world, str(self.resolve()), data)
+        super().write_bytes(data)
 
     def read_text(self):
         return self.read_bytes().decode()
 
     def write_text(self, data: str):
-        return self.write_bytes(data.encode())
+        self.write_bytes(data.encode())
 
     def read_json(self):
         return json.loads(self.read_text())
 
-    def write_json(self, data: ...):
-        return self.write_text(json.dumps(data))
+    def write_json(self, data: object):
+        self.write_text(json.dumps(data))
 
 
 # - Having only CREATE can/will trigger too early (not done writing yet).
@@ -127,6 +130,7 @@ class EventsFile(Base):
     async def _task_make(self, id: str, fn: FileHandler, path: Path):
         async with World(self._app, id, False) as world:
             path._world = world
+            world.app.store.store(world, "*filename*", bytes(path.resolve()))
             await fn(world, path)
 
     def _task_done(self, task: asyncio.Task[None]):

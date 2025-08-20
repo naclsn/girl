@@ -1,25 +1,22 @@
 from abc import ABC
 from abc import abstractmethod
+from time import time
 from types import TracebackType
 
 from ..world import World
 
-_LoadedRun = dict[str, list[bytes]]
+LoadedRun = dict[str, list[tuple[float, bytes]]]  # XXX: wth
 
 
 class Base(ABC):
     """ """
 
     @abstractmethod
-    async def store(self, id: str, runid: str, key: str, counter: int, data: bytes):
+    async def storerun(self, id: str, runid: str, run: LoadedRun):
         """ """
 
     @abstractmethod
-    async def loadall(self, id: str, runid: str) -> _LoadedRun:
-        """ """
-
-    @abstractmethod
-    async def sync(self, id: str, runid: str):
+    async def loadrun(self, id: str, runid: str) -> LoadedRun:
         """ """
 
     # @abstractmethod
@@ -45,34 +42,48 @@ class Store:
 
     def __init__(self, backend: Base):
         self._backend = backend
-        self._ongoing = dict[tuple[str, str], _LoadedRun]()
+        self._ongoing = dict[tuple[str, str], LoadedRun]()
 
-    async def store(self, world: World, key: str, data: bytes):
+    def store(self, world: World, key: str, data: bytes):
         """ """
-        await self._backend.store(world.id, world.runid, key, world._counter, data)
+        assert not world._pacifier
+        pair = (world.id, world.runid)
+        self._ongoing[pair].setdefault(key, []).append((time(), data))
         world._counter += 1
 
-    async def load(self, world: World, key: str) -> bytes:
+    def load(self, world: World, key: str) -> bytes:
         """ """
         assert world._pacifier
         pair = (world.id, world.runid)
-        stuff = self._ongoing.get(pair) or self._ongoing.setdefault(
-            pair, await self._backend.loadall(world.id, world.runid)
-        )
-        res = stuff[key][world._counter]
+        res = self._ongoing[pair][key][world._counter]
         world._counter += 1
-        return res
+        return res[1]
 
-    async def flush(self, world: World):
+    async def beginrun(self, world: World):
         """
-        namin is crap; called when a World obj is closed
+        namin is crap; called when a World obj is entered
+        - pacifier (replayin) loadall once so load() can be sync
+        - no pacifier (real event) not much ig
+        """
+        pair = (world.id, world.runid)
+        if world._pacifier:
+            if pair not in self._ongoing:
+                run = await self._backend.loadrun(world.id, world.runid)
+                self._ongoing.setdefault(pair, run)
+        else:
+            self._ongoing.setdefault(pair, {})
+
+    async def finishrun(self, world: World):
+        """
+        namin is crap; called when a World obj is exited
         - pacifier (replayin) drop loaded stuff
-        - no pacifier (real event) idk but any flushin
+        - no pacifier (real event) saveall to backing
         """
         if world._pacifier:
             del self._ongoing[(world.id, world.runid)]
         else:
-            await self._backend.sync(world.id, world.runid)
+            run = self._ongoing.pop((world.id, world.runid))
+            await self._backend.storerun(world.id, world.runid, run)
 
     async def __aenter__(self):
         """ """

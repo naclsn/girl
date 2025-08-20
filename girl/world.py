@@ -39,6 +39,7 @@ class World:
         self.web = _WorldWebProxy(self)
 
     async def __aenter__(self):
+        await self.app.store.beginrun(self)
         return self
 
     async def __aexit__(
@@ -48,7 +49,7 @@ class World:
         traceback: TracebackType | None = None,
     ):
         await self.web._inner.close()
-        await self.app.store.flush(self)
+        await self.app.store.finishrun(self)
 
 
 _Params_ = ParamSpec("_Params_")

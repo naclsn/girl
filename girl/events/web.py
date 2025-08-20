@@ -11,6 +11,7 @@ from typing import Callable
 from typing import Literal
 
 from aiohttp import web
+from yarl import URL  # XXX: transitive dep
 
 from .. import app
 from ..world import World
@@ -26,7 +27,7 @@ class Request:
     def __init__(
         self,
         world: World,
-        rel_url: ...,
+        rel_url: URL,
         match_info: dict[str, str],
         head: dict[str, str],
         body: bytes,
@@ -73,23 +74,25 @@ class Request:
         if body is None:
             raise ValueError("at least one of 'body', 'text' or 'json' must be given")
 
-        # assert not "done", (self._world.app.store.store, (headers, body))
-        _logger.info("%r", (headers, body))
-        # self._world._trackorsomethingidkk(slkdjflsjdfsj)
+        # head = jsonn.dumps(headers).encode()
+        # self._world.app.store.store(self._world, "*response-head*", head)
+        # self._world.app.store.store(self._world, "*response-body*", body)
 
         return web.Response(body=body, status=status, reason=reason, headers=headers)
 
     @classmethod
     async def _from_aiohttp(cls, world: World, req: web.Request):
-        urli = (req.rel_url, req.match_info)
-        head = {k.lower(): v for k, v in req.headers.items()}
+        headers = {k.lower(): v for k, v in req.headers.items()}
         body = await req.read()
 
-        # assert not "done", (world.app.store.store, (urli, head, body))
-        _logger.info("%r", (urli, head, body))
-        # self._world._trackorsomethingidkk(slkdjflsjdfsj)
+        head = jsonn.dumps(headers).encode()
+        match = jsonn.dumps(req.match_info).encode()
+        world.app.store.store(world, "*request-url*", bytes(req.rel_url))
+        world.app.store.store(world, "*request-match*", match)
+        world.app.store.store(world, "*request-head*", head)
+        world.app.store.store(world, "*request-body*", body)
 
-        return cls(world, *urli, head, body)
+        return cls(world, req.rel_url, req.match_info, headers, body)
 
     # XXX: async? really? idk, jic-
     @classmethod
