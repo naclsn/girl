@@ -48,6 +48,7 @@ class _Schedule:
 
     def __str__(self):
         assert not "done"
+        return "da"
 
     def __next__(self) -> datetime:
         assert not "done"
@@ -111,12 +112,12 @@ class EventsCron(Base):
         return self._handlers[id]
 
     @staticmethod
-    async def _fake(world: World, payload: bytes, fn: CronHandler):
+    async def _fake(world: World, payload: bytes | None, fn: CronHandler):
         _ = payload
         await fn(world)
 
     async def _task_make(self, id: str, fn: CronHandler):
-        async with World(self._app, id, False) as world:
+        async with World(self._app, id, None) as world:
             await fn(world)
 
     def _task_done(self, task: asyncio.Task[None]):

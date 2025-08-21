@@ -1,11 +1,14 @@
 """A collection of managment procs."""
 
 import asyncio
+import sys
 from codeop import compile_command
 from collections.abc import Awaitable
+from datetime import datetime
 from fnmatch import fnmatchcase
 from functools import wraps
 from logging import getLogger
+from pdb import Pdb
 from traceback import format_exception
 from typing import Callable
 from typing import TypeVar
@@ -20,7 +23,7 @@ _Afn_ = TypeVar("_Afn_", bound=Callable[..., Awaitable[object]])
 
 def _proc(rfn: _Afn_) -> _Afn_:
     @wraps(rfn)
-    async def wfn(*a: ..., app: App, io: Interact):
+    async def wfn(*a: ..., app: App | None = None, io: Interact | None = None):
         ka = dict[str, object]()
         if "app" in rfn.__annotations__:
             ka["app"] = app
@@ -63,7 +66,11 @@ class Interact:
         self.flush()
 
     def flush(self):
-        asyncio.run_coroutine_threadsafe(self.aflush(), self._loop).result()
+        fut = asyncio.run_coroutine_threadsafe(self.aflush(), self._loop)
+        try:
+            fut.result()
+        except ConnectionError:
+            pass
 
     def write(self, data: str):
         self._buf.extend(data.encode())
@@ -116,7 +123,7 @@ async def interact(*, app: App, io: Interact):
 
 
 @_proc
-async def lsevents(filt: str = "all:*", /, *, app: App):
+async def lshandlers(filt: str = "all:*", /, *, app: App):
     """
     cron:*
     file:*
@@ -136,18 +143,81 @@ async def lsevents(filt: str = "all:*", /, *, app: App):
     )
 
 
-# _Perform_ = Literal["verbose", "breakpoint", "perform"]
+@_proc
+async def lsevents(
+    filt: str = "all:*",
+    min_ts: float | str | datetime = 0,
+    max_ts: float | str | datetime = 10e10,
+    /,
+    *,
+    app: App,
+):
+    if isinstance(min_ts, str):
+        min_ts = datetime.fromisoformat(min_ts)
+    if isinstance(min_ts, datetime):
+        min_ts = min_ts.timestamp()
+    if isinstance(max_ts, str):
+        max_ts = datetime.fromisoformat(max_ts)
+    if isinstance(max_ts, datetime):
+        max_ts = max_ts.timestamp()
+    if max_ts <= min_ts:
+        raise ValueError(f"broken timestamp range: {max_ts} <= {min_ts}")
+
+    return {
+        id: [
+            (ts, runid)
+            for ts, runid in await app.store.listruns(id)
+            if min_ts <= ts < max_ts
+        ]
+        for id in await lshandlers(filt, app=app)
+    }
+
+
+class _Bidoof:
+    def __init__(self, is_new: bool, io: Interact):
+        self.is_new = is_new
+        self._io = io
+        self._loop = asyncio.get_event_loop()
+
+    def _breakpoint(self, *, header: str | None = None):
+        d = Pdb(stdin=self._io, stdout=self._io)
+        d.use_rawinput = False
+        if header:
+            d.message(header)
+        d.set_trace(sys._getframe().f_back)
+
+    def storing(self, world: "World", key: str, ts: float, data: bytes):
+        self._breakpoint(header=f"storing {key} @{ts}")
+
+    def loading(self, world: "World", key: str, ts: float, data: bytes) -> bytes:
+        self._breakpoint(header=f"storing {key} @{ts}")
+        return data
+
+    def performing(
+        self,
+        world: "World",
+        fn: Callable[..., object],
+        *args: ...,
+        **kwargs: ...,
+    ):
+        self._breakpoint(header=f"performing {fn!r}")
+        world._pacifier = None
+        r = fn(*args, **kwargs)
+        world._pacifier = self
+        return r
 
 
 @_proc
-async def fake(
+async def doevent(
     id: str,
-    payload: bytes | str,
-    perform: bool = False,
+    runid: str | None = None,
+    payload: bytes | str | None = None,
     *,
     app: App,
     io: Interact,
 ):
+    if runid is not None and payload is not None:
+        raise ValueError("cannot have both 'runid' and 'payload'")
     for ev in (app.cron, app.file, app.web):
         if id in ev.handlers():
             handler = ev.handler(id)
@@ -155,40 +225,25 @@ async def fake(
     else:
         raise ValueError(f"event handler for {id!r} not found")
 
-    if not isinstance(payload, bytes):
-        payload = payload.encode()
+    if runid is None and not isinstance(payload, bytes):
+        payload = payload.encode() if payload else b""
+    assert payload is None or isinstance(payload, bytes)
 
     def inner():
-        assert not "done", "yet"
-        asyncio.run_coroutine_threadsafe(handler.fake(world, payload), loop).result()
+        "this gets sent to an isolated thread.."
 
-    loop = asyncio.get_event_loop()
-    async with World(app, id, perform and io) as world:
-        await asyncio.to_thread(inner)
+        async def innermore():
+            "..which gets its own loop so it can have its own async stuff"
+            async with World(app, id, _Bidoof(runid is None, io), runid=runid) as world:
+                await handler.fake(world, payload)
 
+        # the `io: Interact` will still ask for tasks to be ran on the main thread
+        # (which is where its connection was created anyways); so when doing eg a
+        # `readline`, this_thread's loop will wait on the top-level task and its
+        # chain of dependencies which will block on said `readline` which sent a
+        # task for the main thread's loop to handle; it also means that pacifier
+        # can now be written sync to the condition that it does't send to main loop
+        # a task that may itself send something to main loop (..?)
+        asyncio.run(innermore())
 
-@_proc
-async def replay(
-    id: str,
-    runid: str,
-    perform: bool = False,
-    *,
-    app: App,
-    io: Interact,
-):
-    for ev in (app.cron, app.file, app.web):
-        if id in ev.handlers():
-            handler = ev.handler(id)
-            break
-    else:
-        raise ValueError(f"event handler for {id!r} not found")
-
-    payload = ...
-
-    def inner():
-        assert not "done", "yet"
-        asyncio.run_coroutine_threadsafe(handler.fake(world, payload), loop).result()
-
-    loop = asyncio.get_event_loop()
-    async with World(app, id, perform and io, runid=runid) as world:
-        await asyncio.to_thread(inner)
+    await asyncio.to_thread(inner)

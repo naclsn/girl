@@ -37,10 +37,8 @@ class Path(type(StdPath())):
     _world: World | None = None
 
     def read_bytes(self):
-        if self._world and self._world._pacifier:
-            key = str(self.resolve())
-            assert not "done", key
-            return bytes()
+        if self._world and self._world._pacifier and not self._world._pacifier.is_new:
+            return self._world.app.store.load(self._world, str(self.resolve()))
 
         data = super().read_bytes()
         if self._world:
@@ -49,13 +47,9 @@ class Path(type(StdPath())):
 
     def write_bytes(self, data: bytes):
         if self._world and self._world._pacifier:
-            # key = str(self.resolve())
-            # assert not "done", key
-            # return int()
+            self._world._pacifier.performing(self._world, Path.write_bytes, self, data)
             return
 
-        # if self._world:
-        #     self._world.app.store.store(self._world, str(self.resolve()), data)
         super().write_bytes(data)
 
     def read_text(self):
@@ -122,16 +116,18 @@ class EventsFile(Base):
         return self._handlers[id]
 
     @staticmethod
-    async def _fake(world: World, payload: bytes, fn: FileHandler):
+    async def _fake(world: World, payload: bytes | None, fn: FileHandler):
+        if payload is None:
+            payload = world.app.store.load(world, "*path*")
         path = Path(payload.decode())
         path._world = world
         await fn(world, path)
 
-    async def _task_make(self, id: str, fn: FileHandler, path: Path):
-        async with World(self._app, id, False) as world:
-            path._world = world
-            world.app.store.store(world, "*filename*", bytes(path.resolve()))
-            await fn(world, path)
+    async def _task_make(self, id: str, fn: FileHandler, path: str):
+        async with World(self._app, id, None) as world:
+            pathh = world.file(path).resolve()
+            world.app.store.store(world, "*path*", bytes(pathh))
+            await fn(world, pathh)
 
     def _task_done(self, task: asyncio.Task[None]):
         self._running.remove(task)
@@ -172,7 +168,7 @@ class EventsFile(Base):
                 if not found:
                     continue
 
-                task = asyncio.create_task(self._task_make(*found, Path(event.path)))
+                task = asyncio.create_task(self._task_make(*found, str(event.path)))
                 self._running.add(task)
                 task.add_done_callback(self._task_done)
 

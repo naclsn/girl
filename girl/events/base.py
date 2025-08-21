@@ -27,13 +27,13 @@ class Handler(Generic[_Fn_]):
         self,
         id: str,
         fn: _Fn_,
-        fake: Callable[[World, bytes, _Fn_], Awaitable[object]],
+        fake: Callable[[World, bytes | None, _Fn_], Awaitable[object]],
     ):
         self.id = id
         self.fn = fn
         self._fake = fake
 
-    async def fake(self, world: World, payload: bytes):
+    async def fake(self, world: World, payload: bytes | None = None):
         return await self._fake(world, payload, self.fn)
 
 

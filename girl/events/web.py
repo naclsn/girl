@@ -94,9 +94,19 @@ class Request:
 
         return cls(world, req.rel_url, req.match_info, headers, body)
 
-    # XXX: async? really? idk, jic-
     @classmethod
-    async def _from_bytes(cls, world: World, payload: bytes):
+    def _from_storage(cls, world: World):
+        rel_url = world.app.store.load(world, "*request-url*")
+        match = world.app.store.load(world, "*request-match*")
+        head = world.app.store.load(world, "*request-head*")
+        body = world.app.store.load(world, "*request-body*")
+        headers = jsonn.loads(head)
+        match_info = jsonn.loads(match)
+
+        return cls(world, URL(rel_url.decode()), match_info, headers, body)
+
+    @classmethod
+    def _from_bytes(cls, world: World, payload: bytes):
         return cls(world, ...)
 
 
@@ -147,7 +157,7 @@ class EventsWeb(Base):
             if inspect.isasyncgenfunction(fn):
 
                 async def wrapper(req: web.Request):
-                    world = await World(self._app, id, False).__aenter__()
+                    world = await World(self._app, id, None).__aenter__()
                     reqq = await Request._from_aiohttp(world, req)
                     gen = fn(world, reqq)
                     try:
@@ -165,7 +175,7 @@ class EventsWeb(Base):
             elif inspect.iscoroutinefunction(fn):
 
                 async def wrapper(req: web.Request):
-                    async with World(self._app, id, False) as world:
+                    async with World(self._app, id, None) as world:
                         reqq = await Request._from_aiohttp(world, req)
                         res: web.Response = await fn(world, reqq)
                         return res
@@ -186,15 +196,22 @@ class EventsWeb(Base):
         return self._handlers[id]
 
     @staticmethod
-    async def _fake(world: World, payload: bytes, fn: HttpHandler):
-        req = await Request._from_bytes(world, payload)
+    async def _fake(world: World, payload: bytes | None, fn: HttpHandler):
+        if payload is None:
+            assert world._pacifier and not world._pacifier.is_new
+            req = Request._from_storage(world)
+        else:
+            req = Request._from_bytes(world, payload)
+
         if inspect.isasyncgenfunction(fn):
             gen = fn(world, req)
             res: web.Response = await anext(gen)
             await anext(gen, None)
             return res
+
         elif inspect.iscoroutinefunction(fn):
             return await fn(world, req)
+
         assert not "reachable"
 
     @staticmethod

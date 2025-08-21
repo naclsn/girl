@@ -4,12 +4,38 @@ from types import TracebackType
 from typing import Callable
 from typing import Concatenate
 from typing import ParamSpec
+from typing import Protocol
 from typing import TypeVar
 
 import aiohttp
 from coolname import generate_slug
 
 from . import app
+
+
+class PacifierLike(Protocol):  # xxx: for now a protocol, maybe later an ABC
+    @property
+    def is_new(self) -> bool:
+        """ """
+        ...
+
+    def storing(self, world: "World", key: str, ts: float, data: bytes):
+        """ """
+        ...
+
+    def loading(self, world: "World", key: str, ts: float, data: bytes) -> bytes:
+        """ """
+        ...
+
+    def performing(
+        self,
+        world: "World",
+        fn: Callable[..., object],
+        *args: ...,
+        **kwargs: ...,
+    ) -> ...:
+        """if returns None then call site gets to decide on sane default"""
+        ...
 
 
 class World:
@@ -19,19 +45,24 @@ class World:
         "app",
         "id",
         "runid",
-        "_counter",
         "_pacifier",
         "web",
         "file",
         "share",
     )
 
-    def __init__(self, app: "app.App", id: str, pacifier: bool, *, runid: str = ""):
+    def __init__(
+        self,
+        app: "app.App",
+        id: str,
+        pacifier: PacifierLike | None,
+        *,
+        runid: str | None = None,
+    ):
         self.app = app
 
         self.id = id
-        self.runid = runid or generate_slug(3)
-        self._counter = 0
+        self.runid = runid or generate_slug(2)
         self._pacifier = pacifier
 
         self.file = _WorldFileProxy(self)
@@ -48,7 +79,8 @@ class World:
         exc_value: BaseException | None = None,
         traceback: TracebackType | None = None,
     ):
-        await self.web._inner.close()
+        if self.web._inner is not None:
+            await self.web._inner.close()
         await self.app.store.finishrun(self)
 
 
@@ -73,24 +105,37 @@ class _WorldWebProxy:
 
     def __init__(self, world: World):
         self._world = world
-        if not self._world._pacifier:
+        self._inner = None
+
+    def _sess(self):
+        if self._inner is None:
             self._inner = aiohttp.ClientSession()
+        return self._inner
 
     @_proxies(aiohttp.ClientSession.request)
     def request_untracked(self, method: ..., url: ..., **kwargs: ...):
-        return self._inner.request(method, url, **kwargs)
+        return self._sess().request(method, url, **kwargs)
 
     @_proxies(aiohttp.ClientSession.request)
-    async def request_bytes(self, method: ..., url: ..., **kwargs: ...):
+    async def request_bytes(self, method: ..., url: ..., **kwargs: ...) -> bytes:
         if self._world._pacifier:
-            key = f"{method} {url}"
-            assert not "done", key
-            return bytes()
+            data = await self._world._pacifier.performing(
+                self._world,
+                self.request_bytes,
+                method,
+                url,
+                **kwargs,
+            )
+            return b"" if data is None else await data
 
-        async with self._inner.request(method, url, **kwargs) as r:
-            r = await r.read()
-        # self._world._trackorsomethingidkk(key, r, kwargs)
-        return r
+        async with self._sess().request(method, url, **kwargs) as r:
+            data = await r.read()
+
+        params = json.dumps(kwargs).encode()
+        self._world.app.store.store(self._world, f"{method} {url} *params*", params)
+        self._world.app.store.store(self._world, f"{method} {url}", data)
+
+        return data
 
     @_proxies(aiohttp.ClientSession.request)
     async def request_text(self, method: ..., url: ..., **kwargs: ...):
