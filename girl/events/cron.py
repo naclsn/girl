@@ -1,10 +1,11 @@
 import asyncio
 from collections.abc import Awaitable
+from collections.abc import Iterable
 from datetime import datetime
-from datetime import timedelta
 from logging import getLogger
 from typing import Callable
 from typing import TypedDict
+from typing import Unpack
 
 from .. import app
 from ..world import World
@@ -29,29 +30,101 @@ MONTHS = [
     ("november", "nov"),
     ("december", "dec"),
 ]
+DAYS = [
+    ("sunday", "sun"),
+    ("monday", "mon"),
+    ("tuesday", "tue", "tues"),
+    ("wednesday", "wed"),
+    ("thursday", "thu", "thur", "thurs"),
+    ("friday", "fri"),
+    ("saturday", "sat"),
+]
 
 
 class OnSpecificDates(TypedDict, total=False):
-    year: int
-    month: int | str
-    day: int
-    hour: int
-    minute: int
-    second: int
+    months: int | str | Iterable[int | str]
+    days: int | Iterable[int]
+    # weekdays: str | Iterable[str]
+    hours: int | Iterable[int]
+    minutes: int | Iterable[int]
 
 
 class _Schedule:
-    __slots__ = ()
+    __slots__ = ("_months", "_days", "_hours", "_minutes")
 
-    def __init__(self, _):
-        pass
+    @staticmethod
+    def _valid(it: int | Iterable[int] | None, r: range, unit: str):
+        ls = [it] if isinstance(it, int) else sorted(set(it)) if it else []
+        if not ls:
+            return ls
+        if ls[0] not in r:
+            raise ValueError(f"invalid {unit}: {ls[0]} not in {r}")
+        if ls[-1] not in r:
+            raise ValueError(f"invalid {unit}: {ls[-1]} not in {r}")
+        return ls
+
+    def __init__(self, specific: OnSpecificDates):
+        months = specific.get("months") or ()
+        months = iter((months,) if isinstance(months, (int, str)) else months)
+        self._months = list[int]()
+        for m in months:
+            if isinstance(m, str):
+                m = m.strip().lower()
+                for month, nam in enumerate(MONTHS):
+                    if m in nam:
+                        break
+                else:
+                    raise ValueError(f"invalid month name {m!r}")
+                m = month
+            self._months.append(m)
+        self._months = self._valid(self._months, range(1, 13), "months")
+        # if "days" in specific and "weekdays" in specific:
+        #     raise ValueError("cannot have both 'days' and 'weekdays'")
+        # if 'days' in specific:
+        #     days = specific.get('days')
+        #     weekdays = specific.get('weekdays')
+        self._days = self._valid(specific.get("days"), range(1, 32), "days")
+        self._hours = self._valid(specific.get("hours"), range(0, 24), "hours")
+        self._minutes = self._valid(specific.get("minutes"), range(0, 60), "minutes")
+
+    @staticmethod
+    def _present(ls: list[int]):
+        if not ls:
+            return "*"
+        s = ""
+        k = 0
+        while k < len(ls):
+            s += f",{ls[k]}"
+            k += 1
+            if k < len(ls) and ls[k] - 1 == ls[k - 1]:
+                while k < len(ls) and ls[k] - 1 == ls[k - 1]:
+                    k += 1
+                s += f"-{ls[k - 1]}"
+        return s[1:]
 
     def __str__(self):
-        assert not "done"
-        return "da"
+        minutes = self._present(self._minutes)
+        hours = self._present(self._hours)
+        days = self._present(self._days)
+        months = self._present(self._months)
+        return f"{minutes} {hours} {days} {months}"
 
     def __next__(self) -> datetime:
-        assert not "done"
+        now = datetime.now()
+        for year in range(now.year, now.year + 2):
+            for month in self._months or range(1, 13):
+                for day in self._days or range(1, 32):
+                    try:
+                        datetime(year, month, day)
+                    except ValueError:
+                        break  # invalid day for month (eg 31)
+                    for hour in self._hours or range(0, 24):
+                        for minute in self._minutes or range(0, 60):
+                            candidate = datetime(year, month, day, hour, minute)
+                            if candidate <= now:
+                                continue
+                            return candidate
+        raise StopIteration
 
 
 class EventsCron(Base):
@@ -63,34 +136,16 @@ class EventsCron(Base):
 
     def event(
         self,
-        specific: OnSpecificDates | None = None,
-        /,
         *,
         after: datetime | None = None,
         before: datetime | None = None,
-        interval: timedelta | None = None,
+        **specific: Unpack[OnSpecificDates],
     ):
         """ """
 
         if after is not None and before is not None and before <= after:
             raise ValueError(f"'after' must precede 'before': {before!r} <= {after!r}")
-
-        if specific is not None and interval is not None:
-            raise ValueError("cannot specify both on specific dates and at an interval")
-
-        if specific is not None and isinstance(smonth := specific.get("month"), str):
-            smonth = smonth.strip().lower()
-            for month, nam in enumerate(MONTHS):
-                if smonth in nam:
-                    break
-            else:
-                raise ValueError(f"invalid month name {smonth!r}")
-            specific["month"] = month
-
-        if interval is not None:
-            after = after or datetime.now()
-
-        sched = _Schedule(...)
+        sched = _Schedule(specific)
 
         id = str(sched)
 
