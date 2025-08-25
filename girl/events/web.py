@@ -9,6 +9,7 @@ from pathlib import Path as StdPath
 from pathlib import PurePath
 from typing import Callable
 from typing import Literal
+from typing import TypeVar
 
 from aiohttp import web
 from yarl import URL  # XXX: transitive dep
@@ -115,6 +116,7 @@ HttpHandler = (
     Callable[[World, Request], Awaitable[web.StreamResponse]]
     | Callable[[World, Request], AsyncGenerator[web.StreamResponse]]
 )
+_HttpHandler_ = TypeVar("_HttpHandler_", bound=HttpHandler)
 
 MethodStr = Literal[
     "*",
@@ -149,7 +151,7 @@ class EventsWeb(Base):
 
         id = f"{bind} {method} {path}"
 
-        def adder(fn: HttpHandler):
+        def adder(fn: _HttpHandler_):
             if id in self._handlers:
                 raise ValueError("event already observed")
 

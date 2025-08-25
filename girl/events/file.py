@@ -7,6 +7,7 @@ from logging import getLogger
 from pathlib import Path as StdPath
 from pathlib import PurePath
 from typing import Callable
+from typing import TypeVar
 
 from asyncinotify import Inotify
 from asyncinotify import Mask
@@ -74,6 +75,7 @@ _MASK = Mask.CREATE | Mask.CLOSE_WRITE | Mask.EXCL_UNLINK | Mask.ONLYDIR
 _PatAndId = tuple[str, str]
 
 FileHandler = Callable[[World, Path], Awaitable[None]]
+_FileHandler_ = TypeVar("_FileHandler_", bound=FileHandler)
 
 
 class EventsFile(Base):
@@ -94,7 +96,7 @@ class EventsFile(Base):
 
         id = f"{dirname}/{fileglob}"
 
-        def adder(fn: FileHandler):
+        def adder(fn: _FileHandler_):
             if id in self._handlers:
                 raise ValueError("event already observed")
 

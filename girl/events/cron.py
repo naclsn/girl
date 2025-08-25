@@ -5,6 +5,7 @@ from datetime import datetime
 from logging import getLogger
 from typing import Callable
 from typing import TypedDict
+from typing import TypeVar
 from typing import Unpack
 
 from .. import app
@@ -13,6 +14,7 @@ from .base import Base
 from .base import Handler
 
 CronHandler = Callable[[World], Awaitable[None]]
+_CronHandler_ = TypeVar("_CronHandler_", bound=CronHandler)
 
 _logger = getLogger(__name__)
 
@@ -149,13 +151,12 @@ class EventsCron(Base):
 
         id = str(sched)
 
-        def adder(fn: CronHandler):
+        def adder(fn: _CronHandler_):
             if id in self._handlers:
                 raise ValueError("event already observed")
 
-            handler = Handler(id, fn, EventsCron._fake)
-            self._scheds.append((sched, handler))
-            self._handlers[id] = handler
+            self._handlers[id] = Handler(id, fn, EventsCron._fake)
+            self._scheds.append((sched, self._handlers[id]))
             return fn
 
         return adder
