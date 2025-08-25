@@ -136,6 +136,12 @@ class EventsCron(Base):
 
         self._scheds = list[tuple[_Schedule, Handler[CronHandler]]]()
 
+    def summary(self):
+        txt = "Cron tab:\n"
+        for sched, handler in self._scheds:
+            txt += f"    {sched} <{handler.fn.__name__}>\n"
+        return txt
+
     def event(
         self,
         *,
@@ -187,6 +193,10 @@ class EventsCron(Base):
         self._running = set[asyncio.Task[None]]()
 
         try:
+            _logger.info("Cron tab:")
+            for sched, handler in self._scheds:
+                _logger.info(f"    {sched} <{handler.fn.__name__}>")
+
             while self._scheds:
                 upcoming = datetime.max
                 handler = None

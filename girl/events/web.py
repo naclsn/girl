@@ -141,6 +141,16 @@ class EventsWeb(Base):
 
         self._apps = defaultdict[_Bind, web.Application](web.Application)
 
+    def summary(self):
+        txt = ""
+        for bind, app in self._apps.items():
+            txt += f"{'TCP' if isinstance(bind, tuple) else 'Unix'} site on {bind}:\n"
+            for r in app.router.routes():
+                path = "(no resource)" if r.resource is None else r.resource.canonical
+                fn = getattr(r.handler, "__wrapped__")
+                txt += f"    {r.method} {path} <{fn.__name__}>\n"
+        return txt
+
     def event(self, bind: str | PurePath, method: MethodStr, path: str):
         """ """
         if isinstance(bind, str) and ":" in bind:
@@ -186,6 +196,7 @@ class EventsWeb(Base):
             else:
                 raise TypeError("handler should be async def with optionally a yield")
 
+            setattr(wrapper, "__wrapped__", ret_fn)
             self._apps[bindd].router.add_route(method, path, wrapper)
             self._handlers[id] = Handler(id, fn, EventsWeb._fake)
             return ret_fn
@@ -232,16 +243,17 @@ class EventsWeb(Base):
             await runn.setup()
 
             if isinstance(bind, tuple):
-                site_log = f"TCP site on {bind}"
+                site_log = f"TCP site on {bind}:"
                 await web.TCPSite(runn, *bind).start()
             else:
-                site_log = f"Unix site on {bind}"
+                site_log = f"Unix site on {bind}:"
                 await web.UnixSite(runn, str(bind)).start()
 
             _logger.info(site_log)
             for r in app.router.routes():
                 path = "(no resource)" if r.resource is None else r.resource.canonical
-                _logger.info(f"    {r.method} {path}")
+                fn = getattr(r.handler, "__wrapped__")
+                _logger.info(f"    {r.method} {path} <{fn.__name__}>")
 
             return runn
 

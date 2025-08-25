@@ -22,6 +22,9 @@ class App:
         self.web = EventsWeb(self)
         self._readies = list[Callable[[], Awaitable[None]]]()
 
+    def summary(self) -> str:
+        return self.cron.summary() + self.file.summary() + self.web.summary()
+
     def ready(self, cb: Callable[[], Awaitable[None]]):
         """ """
         self._readies.append(cb)

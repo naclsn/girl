@@ -41,6 +41,10 @@ class Base(ABC):
     """ """
 
     @abstractmethod
+    def summary(self) -> str:
+        """ """
+
+    @abstractmethod
     def event(self, *a: ..., **ka: ...) -> Callable[[_Fn_], _Fn_]:
         """ """
 

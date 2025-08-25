@@ -86,6 +86,15 @@ class EventsFile(Base):
         self._inotify: Inotify | None = None
         self._watched = defaultdict[Watch, list[_PatAndId]](list)
 
+    def summary(self):
+        txt = ""
+        watch = list = None
+        for watch, list in self._watched.items():
+            txt += f"Watching {watch.path}:\n"
+            for pat, id in list:
+                txt += f"    {pat} <{self._handlers[id].fn.__name__}>\n"
+        return txt
+
     def event(self, dirname: str | PurePath, fileglob: str):
         """ """
         # need to hackishly elevate to path just to resolve and test is_dir
@@ -148,8 +157,8 @@ class EventsFile(Base):
             watch = list = None
             for watch, list in self._watched.items():
                 _logger.info(f"Watching {watch.path}:")
-                for pat, _ in list:
-                    _logger.info(f"    {pat}")
+                for pat, id in list:
+                    _logger.info(f"    {pat} <{self._handlers[id].fn.__name__}>")
             del watch, list
 
             async for event in self._inotify:
