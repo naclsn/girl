@@ -107,6 +107,7 @@ class Request:
 
     @classmethod
     def _from_bytes(cls, world: World, payload: bytes):
+        assert not "implemented", Request._from_bytes
         return cls(world, ...)
 
 

@@ -173,7 +173,7 @@ async def lsevents(
     }
 
 
-class _Bidoof:
+class _RawPdb:
     def __init__(self, is_new: bool, io: Interact):
         self.is_new = is_new
         self._io = io
@@ -184,13 +184,26 @@ class _Bidoof:
         d.use_rawinput = False
         if header:
             d.message(header)
-        d.set_trace(sys._getframe().f_back)
+        """ disabled for now, not sure what i want of it...
+        # search for a user-code frame so it's not jarring to debug
+        f = sys._getframe()
+        while f and str(f.f_globals["__name__"]).startswith("girl."):
+            f = f.f_back
+        # if we went as far back as to hit the `asyncio.run(innermost)`
+        # then it means we didn't even reach into the user function yet
+        # (eg. `loading`s to re-assemble the `events.web.Request` object)
+        if f and str(f.f_globals["__name__"]).startswith("asyncio."):
+            # at minima be outside of the pacifier but xxx don't like it
+            f = sys._getframe().f_back.f_back
+        '''"""
+        f = sys._getframe().f_back.f_back  # '''
+        d.set_trace(f)
 
     def storing(self, world: "World", key: str, ts: float, data: bytes):
         self._breakpoint(header=f"storing {key} @{ts}")
 
     def loading(self, world: "World", key: str, ts: float, data: bytes) -> bytes:
-        self._breakpoint(header=f"storing {key} @{ts}")
+        self._breakpoint(header=f"loading {key} @{ts}")
         return data
 
     def performing(
@@ -234,7 +247,7 @@ async def doevent(
 
         async def innermore():
             "..which gets its own loop so it can have its own async stuff"
-            async with World(app, id, _Bidoof(runid is None, io), runid=runid) as world:
+            async with World(app, id, _RawPdb(runid is None, io), runid=runid) as world:
                 await handler.fake(world, payload)
 
         # the `io: Interact` will still ask for tasks to be ran on the main thread

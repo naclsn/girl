@@ -66,7 +66,6 @@ class World:
         self._pacifier = pacifier
 
         self.file = _WorldFileProxy(self)
-        self.share = ...  # set[tuple[str, ...]]  # wrapped as to be write-once
         self.web = _WorldWebProxy(self)
 
     async def __aenter__(self):

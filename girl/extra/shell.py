@@ -68,7 +68,7 @@ async def shell(world: World, arg: web.Request | Path, /) -> web.StreamResponse 
             try:
                 async for line in r:
                     line = line.decode().strip()
-                    w.write(json.dumps(await _rpc(line, world.app, io)).encode())
+                    w.write(f"{json.dumps(await _rpc(line, world.app, io))}\n".encode())
                     await w.drain()
 
             finally:
