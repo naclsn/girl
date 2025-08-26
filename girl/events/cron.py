@@ -4,9 +4,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from logging import getLogger
 from typing import Callable
-from typing import TypedDict
 from typing import TypeVar
-from typing import Unpack
 
 from .. import app
 from ..world import World
@@ -43,16 +41,8 @@ DAYS = [
 ]
 
 
-class OnSpecificDates(TypedDict, total=False):
-    months: int | str | Iterable[int | str]
-    days: int | Iterable[int]
-    # weekdays: str | Iterable[str]
-    hours: int | Iterable[int]
-    minutes: int | Iterable[int]
-
-
 class _Schedule:
-    __slots__ = ("_months", "_days", "_hours", "_minutes")
+    __slots__ = ("_minutes", "_hours", "_days", "_months", "_after", "_before")
 
     @staticmethod
     def _valid(it: int | Iterable[int] | None, r: range, unit: str):
@@ -65,9 +55,19 @@ class _Schedule:
             raise ValueError(f"invalid {unit}: {ls[-1]} not in {r}")
         return ls
 
-    def __init__(self, specific: OnSpecificDates):
-        months = specific.get("months") or ()
+    def __init__(
+        self,
+        minutes: int | Iterable[int],
+        hours: int | Iterable[int],
+        days: int | Iterable[int],  # weekdays: str | Iterable[str]
+        months: int | str | Iterable[int | str],
+        after: datetime | None = None,
+        before: datetime | None = None,
+    ):
         months = iter((months,) if isinstance(months, (int, str)) else months)
+        self._minutes = self._valid(minutes, range(0, 60), "minutes")
+        self._hours = self._valid(hours, range(0, 24), "hours")
+        self._days = self._valid(days, range(1, 32), "days")
         self._months = list[int]()
         for m in months:
             if isinstance(m, str):
@@ -80,14 +80,8 @@ class _Schedule:
                 m = month
             self._months.append(m)
         self._months = self._valid(self._months, range(1, 13), "months")
-        # if "days" in specific and "weekdays" in specific:
-        #     raise ValueError("cannot have both 'days' and 'weekdays'")
-        # if 'days' in specific:
-        #     days = specific.get('days')
-        #     weekdays = specific.get('weekdays')
-        self._days = self._valid(specific.get("days"), range(1, 32), "days")
-        self._hours = self._valid(specific.get("hours"), range(0, 24), "hours")
-        self._minutes = self._valid(specific.get("minutes"), range(0, 60), "minutes")
+        self._after = after
+        self._before = before
 
     @staticmethod
     def _present(ls: list[int]):
@@ -109,10 +103,19 @@ class _Schedule:
         hours = self._present(self._hours)
         days = self._present(self._days)
         months = self._present(self._months)
-        return f"{minutes} {hours} {days} {months}"
+        r = f"{minutes} {hours} {days} {months}"
+        if self._after:
+            r = f"{self._after!r} <= {r}"
+        if self._before:
+            r = f"{r} <= {self._before!r}"
+        return r
 
     def __next__(self) -> datetime:
         now = datetime.now()
+        if self._after and now < self._after:
+            return self._after
+        if self._before and self._before < now:
+            raise StopIteration
         for year in range(now.year, now.year + 2):
             for month in self._months or range(1, 13):
                 for day in self._days or range(1, 32):
@@ -144,16 +147,19 @@ class EventsCron(Base):
 
     def event(
         self,
+        minutes: int | Iterable[int],
+        hours: int | Iterable[int],
+        days: int | Iterable[int],  # weekdays: str | Iterable[str]
+        months: int | str | Iterable[int | str],
         *,
         after: datetime | None = None,
         before: datetime | None = None,
-        **specific: Unpack[OnSpecificDates],
     ):
         """ """
 
         if after is not None and before is not None and before <= after:
             raise ValueError(f"'after' must precede 'before': {before!r} <= {after!r}")
-        sched = _Schedule(specific)
+        sched = _Schedule(minutes, hours, days, months, after, before)
 
         id = str(sched)
 

@@ -6,13 +6,13 @@ from girl import App
 from girl import extra
 from girl.events.file import Path
 from girl.events.web import Request
-from girl.store import BackendMemory
+from girl.store import BackendSqlite
 from girl.world import World
 
 logging.basicConfig(level=logging.NOTSET)
 logger = logging.getLogger(__name__)
 
-app = App(BackendMemory())
+app = App(BackendSqlite("rex.sqlite"))
 app.file.event(Path(__file__).parent, "shell")(extra.shell)
 
 
@@ -32,7 +32,7 @@ async def proj(world: World, req: Request):
     return req.respond(body=b)
 
 
-@app.cron.event()  # every minute of every day
+@app.cron.event((), (), (), ())  # every minute of every day
 async def beat(_world: World):
     logger.info("alive")
 

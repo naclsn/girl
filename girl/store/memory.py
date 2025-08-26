@@ -13,11 +13,6 @@ class BackendMemory(Base):
     async def storerun(self, id: str, runid: str, run: LoadedRun):
         self._runs.setdefault(id, {})[runid] = run
 
-        import json
-
-        with open("/tmp/memory.json", "w") as fuck:
-            json.dump(self._runs, fuck, indent=3, default=repr)
-
     async def loadrun(self, id: str, runid: str):
         return deepcopy(self._runs[id][runid])
 

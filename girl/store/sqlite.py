@@ -51,10 +51,11 @@ class BackendSqlite(Base):
 
     async def listruns(self, id: str):
         """"""
-        return await self._conn.execute_fetchall(
+        all = await self._conn.execute_fetchall(
             r"SELECT ts, runid FROM event_runs WHERE ? = id ORDER BY ts",
             (id,),
         )
+        return list(map(tuple, all))
 
     async def __aenter__(self):
         self._conn = await (aiosqlite.connect(self._path) if self._path else self._conn)
