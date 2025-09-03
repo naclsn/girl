@@ -148,7 +148,7 @@ class EventsWeb(Base):
             for r in app.router.routes():
                 path = "(no resource)" if r.resource is None else r.resource.canonical
                 fn = getattr(r.handler, "__wrapped__")
-                txt += f"    {r.method} {path} <{fn.__name__}>\n"
+                txt += f"    {r.method} {path} {fn}\n"
         return txt
 
     def event(self, bind: str | PurePath, method: MethodStr, path: str):
@@ -171,6 +171,7 @@ class EventsWeb(Base):
 
                 async def wrapper(req: web.Request):
                     world = await World(self._app, id, None).__aenter__()
+                    _logger.debug(f"Web event with {world!r} (generator - will resume)")
                     reqq = await Request._from_aiohttp(world, req)
                     gen = fn(world, reqq)
                     try:
@@ -189,6 +190,7 @@ class EventsWeb(Base):
 
                 async def wrapper(req: web.Request):
                     async with World(self._app, id, None) as world:
+                        _logger.debug(f"Web event with {world!r}")
                         reqq = await Request._from_aiohttp(world, req)
                         res: web.Response = await fn(world, reqq)
                         return res
@@ -230,6 +232,7 @@ class EventsWeb(Base):
 
     @staticmethod
     async def _resume_in_background(gen: AsyncGenerator[object], world: World):
+        _logger.debug(f"{world!r} resuming in the background")
         try:
             await anext(gen, None)
         except BaseException as e:
@@ -253,7 +256,7 @@ class EventsWeb(Base):
             for r in app.router.routes():
                 path = "(no resource)" if r.resource is None else r.resource.canonical
                 fn = getattr(r.handler, "__wrapped__")
-                _logger.info(f"    {r.method} {path} <{fn.__name__}>")
+                _logger.info(f"    {r.method} {path} {fn}")
 
             return runn
 

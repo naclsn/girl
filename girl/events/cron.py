@@ -142,7 +142,7 @@ class EventsCron(Base):
     def summary(self):
         txt = "Cron tab:\n"
         for sched, handler in self._scheds:
-            txt += f"    {sched} <{handler.fn.__name__}>\n"
+            txt += f"    {sched} {handler.fn}\n"
         return txt
 
     def event(
@@ -186,6 +186,7 @@ class EventsCron(Base):
 
     async def _task_make(self, id: str, fn: CronHandler):
         async with World(self._app, id, None) as world:
+            _logger.debug(f"Cron event with {world!r}")
             await fn(world)
 
     def _task_done(self, task: asyncio.Task[None]):
@@ -201,7 +202,7 @@ class EventsCron(Base):
         try:
             _logger.info("Cron tab:")
             for sched, handler in self._scheds:
-                _logger.info(f"    {sched} <{handler.fn.__name__}>")
+                _logger.info(f"    {sched} {handler.fn}")
 
             while self._scheds:
                 upcoming = datetime.max

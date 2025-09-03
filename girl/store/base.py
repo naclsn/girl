@@ -1,9 +1,12 @@
 from abc import ABC
 from abc import abstractmethod
+from logging import getLogger
 from time import time
 from types import TracebackType
 
 from ..world import World
+
+_logger = getLogger(__name__)
 
 LoadedRun = tuple[float, dict[str, tuple[float, bytes]]]  # XXX: wth
 
@@ -63,6 +66,7 @@ class Store:
         entries[key] = ts, data
 
         if world._pacifier:
+            _logger.debug(f"store({world!r}, {key!r}): has %s", world._pacifier)
             world._pacifier.storing(world, key, ts, data)
 
     def load(self, world: World, key: str) -> bytes:
@@ -78,6 +82,7 @@ class Store:
             key = next(nkey for nkey in search_present if nkey in entries)
         ts, data = entries[key]
 
+        _logger.debug(f"load({world!r}, {key!r}): has %s", world._pacifier)
         data = world._pacifier.loading(world, key, ts, data)
         return data
 
@@ -89,6 +94,7 @@ class Store:
         """
         pair = world.id, world.runid
         if world._pacifier and not world._pacifier.is_new:
+            _logger.debug(f"beginrun({world!r}): has %s", world._pacifier)
             if pair not in self._ongoing:
                 run = await self._backend.loadrun(world.id, world.runid)
                 self._ongoing.setdefault(pair, run)
@@ -102,9 +108,13 @@ class Store:
         - no pacifier (real event) saveall to backing
         """
         if world._pacifier and not world._pacifier.is_new:
+            _logger.debug(f"finishrun({world!r}): has %s", world._pacifier)
             del self._ongoing[(world.id, world.runid)]
         else:
             run = self._ongoing.pop((world.id, world.runid))
+            total = sum(len(data) for _, data in run[1].values())
+            info = f"{len(run[1])} items, {total} bytes"
+            _logger.debug(f"flushing run {world!r} (@ {run[0]}); {info}")
             await self._backend.storerun(world.id, world.runid, run)
 
     async def listruns(self, id: str) -> list[tuple[float, str]]:

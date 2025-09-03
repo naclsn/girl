@@ -82,6 +82,9 @@ class World:
             await self.web._inner.close()
         await self.app.store.finishrun(self)
 
+    def __repr__(self):
+        return f"<world {self.id!r} {self.runid!r}>"
+
 
 _Params_ = ParamSpec("_Params_")
 _RetInner_ = TypeVar("_RetInner_")

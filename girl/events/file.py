@@ -92,7 +92,7 @@ class EventsFile(Base):
         for watch, list in self._watched.items():
             txt += f"Watching {watch.path}:\n"
             for pat, id in list:
-                txt += f"    {pat} <{self._handlers[id].fn.__name__}>\n"
+                txt += f"    {pat} {self._handlers[id].fn}\n"
         return txt
 
     def event(self, dirname: str | PurePath, fileglob: str):
@@ -136,6 +136,7 @@ class EventsFile(Base):
 
     async def _task_make(self, id: str, fn: FileHandler, path: str):
         async with World(self._app, id, None) as world:
+            _logger.debug(f"File event with {world!r}")
             pathh = world.file(path).resolve()
             world.app.store.store(world, "*path*", bytes(pathh))
             await fn(world, pathh)
@@ -158,7 +159,7 @@ class EventsFile(Base):
             for watch, list in self._watched.items():
                 _logger.info(f"Watching {watch.path}:")
                 for pat, id in list:
-                    _logger.info(f"    {pat} <{self._handlers[id].fn.__name__}>")
+                    _logger.info(f"    {pat} {self._handlers[id].fn}")
             del watch, list
 
             async for event in self._inotify:
