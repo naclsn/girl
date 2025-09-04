@@ -1,73 +1,54 @@
 #!/usr/bin/env python3
 
-import asyncio
 import logging
-
-from aiohttp.web import Request
-from aiohttp.web import Response
+import sys
 
 from girl import App
 from girl import extra
-from girl.world import Path
+from girl.events.file import Path
+from girl.events.web import Request
+from girl.store import BackendSqlite
 from girl.world import World
 
 logging.basicConfig(level=logging.NOTSET)
 logger = logging.getLogger(__name__)
 
-app = App()
-
+app = App(BackendSqlite("ex.sqlite"))
 app.file.event(Path(__file__).parent, "shell")(extra.shell)
-app.web.event("localhost:8091", "GET", "/shell")(extra.shell)
 
 
 @app.web.event("localhost:8080", "GET", "/hi")
-async def hi(_world: World, _req: Request):
-    return Response(text="hello")
+async def hi(world: World, req: Request):
+    if name := req.rel_url.query.get("file"):
+        world.file(name).write_text("hello")
+    return req.respond(text="hello")
 
 
-@app.web.event("localhost:8080", "GET", "/lost")
-async def lost(world: World, _req: Request):
-    html = await world.web.request_text("GET", "http://perdu.com")
-    return Response(text=html)
+@app.web.event("localhost:8080", "GET", "/proj")
+async def proj(world: World, req: Request):
+    # return req.respond(body=world.file("pyproject.toml").read_bytes())
+    f = world.file("pyproject.toml")
+    b = f.read_bytes()
+    logger.debug(f"response is {len(b)} bytes")
+    return req.respond(body=b)
 
 
-@app.web.event("localhost:8080", "GET", "/wait")
-async def wait(_world: World, req: Request):
-    txt = req.query.get("for", "")
-    match txt[-1:]:
-        case "h":
-            delay = 3600 * float(txt[:-1])
-        case "m":
-            delay = 60 * float(txt[:-1])
-        case "s":
-            delay = float(txt[:-1])
-        case _:
-            delay = float(txt or 1)
-    await asyncio.sleep(delay)
-    return Response(text=f"{delay}s")
-
-
-@app.file.event("./", "move.me")
+@app.file.event("./", "move.*")
 async def moveme(_world: World, file: Path):
-    logger.info("got move.me file")
-    where = file.read_text().strip()
+    logger.info("got move-me file")
+    where = file.read_text().splitlines()[0].strip()
     assert where
     logger.info(f"mv {file} {where}")
     file.rename(where)
 
 
-@app.file.event("./", "ohce")
-async def ohce(_world: World, file: Path):
-    r, w = await asyncio.open_unix_connection(file)
-    file.unlink()
-    async for line in r:
-        w.write("".join(reversed(list(line.decode().strip()))).encode() + b"\n")
+@app.cron.event((), (), (), ())  # every minute of every day
+async def beat(_world: World):
+    logger.info("alive")
 
 
-@app.file.event("./", "*")
-async def anyfile(_world: World, file: Path):
-    logger.info("hay! %s %s %s", file, type(file), repr(file))
-
-
-if "__main__" == __name__:
+if {"-h", "--help", "-n", "--dry-run"} & set(sys.argv[1:]):
+    print(app.summary())
+    exit("Starting with no argument will listen for these events.")
+else:
     app.run()

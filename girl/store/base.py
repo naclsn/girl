@@ -114,7 +114,7 @@ class Store:
             run = self._ongoing.pop((world.id, world.runid))
             total = sum(len(data) for _, data in run[1].values())
             info = f"{len(run[1])} items, {total} bytes"
-            _logger.debug(f"flushing run {world!r} (@ {run[0]}); {info}")
+            _logger.info(f"flushing run {world!r} @ {run[0]}; {info}")
             await self._backend.storerun(world.id, world.runid, run)
 
     async def listruns(self, id: str) -> list[tuple[float, str]]:
