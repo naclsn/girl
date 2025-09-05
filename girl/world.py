@@ -62,7 +62,7 @@ class World:
         self.app = app
 
         self.id = id
-        self.runid = runid or generate_slug(2)
+        self.runid = runid or generate_slug()
         self._pacifier = pacifier
 
         self.file = _WorldFileProxy(self)

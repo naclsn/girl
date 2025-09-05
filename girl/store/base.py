@@ -31,6 +31,10 @@ class Base(ABC):
     #     """ """
 
     @abstractmethod
+    async def status(self) -> str:
+        """ """
+
+    @abstractmethod
     async def __aenter__(self):
         """ """
 

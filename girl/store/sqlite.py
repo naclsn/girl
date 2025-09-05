@@ -57,6 +57,16 @@ class BackendSqlite(Base):
         )
         return list(map(tuple, all))
 
+    async def status(self):
+        c = await self._conn.execute(
+            r"""
+ SELECT (page_count - freelist_count) * page_size as size
+ FROM pragma_page_count(), pragma_freelist_count(), pragma_page_size()
+ """,
+            (),
+        )
+        return f"{int((await c.fetchone())[0]):_} B"
+
     async def __aenter__(self):
         self._conn = await (aiosqlite.connect(self._path) if self._path else self._conn)
         await self._conn.executescript(

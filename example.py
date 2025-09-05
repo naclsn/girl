@@ -10,7 +10,7 @@ from girl.events.web import Request
 from girl.store import BackendSqlite
 from girl.world import World
 
-logging.basicConfig(level=logging.NOTSET)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = App(BackendSqlite("ex.sqlite"))

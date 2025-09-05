@@ -19,6 +19,9 @@ class BackendMemory(Base):
     async def listruns(self, id: str):
         return [(ts, runid) for runid, (ts, _) in self._runs.get(id, {}).items()]
 
+    async def status(self):
+        return "(hellow)"
+
     async def __aenter__(self):
         pass
 
