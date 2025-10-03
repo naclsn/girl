@@ -9,6 +9,7 @@ from ..world import World
 _logger = getLogger(__name__)
 
 LoadedRun = tuple[float, dict[str, tuple[float, bytes]]]  # XXX: wth
+"""in-memory run"""
 
 
 class Base(ABC):
@@ -92,7 +93,7 @@ class Store:
 
     async def beginrun(self, world: World):
         """
-        namin is crap; called when a World obj is entered
+        namin is crap; called when a World obj is __aenter__
         - pacifier (replayin) loadall once so load() can be sync
         - no pacifier (real event) not much ig
         """
@@ -107,7 +108,7 @@ class Store:
 
     async def finishrun(self, world: World):
         """
-        namin is crap; called when a World obj is exited
+        namin is crap; called when a World obj is __aexit__
         - pacifier (replayin) drop loaded stuff
         - no pacifier (real event) saveall to backing
         """
@@ -117,9 +118,9 @@ class Store:
         else:
             run = self._ongoing.pop((world.id, world.runid))
             total = sum(len(data) for _, data in run[1].values())
-            info = f"{len(run[1])} items, {total} bytes"
-            _logger.info(f"flushing run {world!r} @ {run[0]}; {info}")
+            _logger.info(f"flush {world!r} {len(run[1])} items {total} bytes")
             await self._backend.storerun(world.id, world.runid, run)
+            await world.app.hook.submit.trigger(world.id, world.runid, run[0])
 
     async def listruns(self, id: str) -> list[tuple[float, str]]:
         """ """

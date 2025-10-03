@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+from pydoc import Helper
 from codeop import compile_command
 from collections.abc import Awaitable
 from datetime import datetime
@@ -49,6 +50,9 @@ class Interact:
         self._buf = bytearray()
         self._loop = asyncio.get_event_loop()
 
+    def sync(self, co: Awaitable[object], /, timeout: float | None = None) -> object:
+        return asyncio.run_coroutine_threadsafe(co, self._loop).result(timeout)
+
     async def aflush(self):
         if self.abwriteflush:
             await self.abwriteflush(bytes(self._buf))
@@ -86,7 +90,8 @@ async def interact(*, app: App, io: Interact):
     def inner():
         io.write("*interactive*\n")
 
-        locs = globs = dict[str, object](app=app, io=io)
+        help = Helper(input=io, output=io)  # (default help tries to pager)
+        locs = globs = dict[str, object](app=app, io=io, help=help)
         while ...:
             try:
                 io.writeflush(">>> ")

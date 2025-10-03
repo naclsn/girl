@@ -19,7 +19,7 @@ aiohttp = "^3.12.13"
 aiosqlite = "^0.21.0"
 asyncinotify = "^4.2.1"
 coolname = "^2.2.0"
-python = "^3.10"
+python = "^3.11"
 
 [tool.poetry.group.ci]
 optional = true

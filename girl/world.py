@@ -115,8 +115,8 @@ class _WorldWebProxy:
         return self._inner
 
     @_proxies(aiohttp.ClientSession.request)
-    def request_untracked(self, method: ..., url: ..., **kwargs: ...):
-        return self._sess().request(method, url, **kwargs)
+    async def request(self, method: ..., url: ..., **kwargs: ...):
+        await self._sess().request(method, url, **kwargs)
 
     @_proxies(aiohttp.ClientSession.request)
     async def request_bytes(self, method: ..., url: ..., **kwargs: ...) -> bytes:

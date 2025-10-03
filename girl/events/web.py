@@ -21,19 +21,36 @@ from .base import Handler
 
 _logger = getLogger(__name__)
 
+MethodStr = Literal[
+    "*",
+    "CONNECT",
+    "HEAD",
+    "GET",
+    "DELETE",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+    "TRACE",
+]
+
 
 class Request:
-    __slots__ = ("_world", "rel_url", "match_info", "_head", "_body")
+    __slots__ = ("_world", "_req", "method", "rel_url", "match_info", "_head", "_body")
 
     def __init__(
         self,
         world: World,
+        method: MethodStr,
         rel_url: URL,
         match_info: dict[str, str],
         head: dict[str, str],
         body: bytes,
+        _req: web.Request | None,
     ):
         self._world = world
+        self._req = _req
+        self.method = method
         self.rel_url = rel_url
         self.match_info = match_info
         self._head = head
@@ -62,22 +79,29 @@ class Request:
         body: bytes | None = None,
         text: str | None = None,
         json: object = _MISSING,
+        file: str | PurePath | None = None,
         status: int = 200,
         reason: str | None = None,
         headers: dict[str, str] | None = None,
     ):
-        if body is not None and text is not None and json is not Request._MISSING:
-            raise ValueError("only one of 'body', 'text' or 'json' must be given")
+        if 1 != (
+            (body is not None)
+            + (text is not None)
+            + (json is not Request._MISSING)
+            + (file is not None)
+        ):
+            raise ValueError(
+                "exactly one of 'body', 'text', 'json' or 'file' must be given"
+            )
+
+        if file is not None:
+            return web.FileResponse(file)
+
         if json is not Request._MISSING:
             text = jsonn.dumps(json)
         if text is not None:
             body = text.encode()
-        if body is None:
-            raise ValueError("at least one of 'body', 'text' or 'json' must be given")
-
-        # head = jsonn.dumps(headers).encode()
-        # self._world.app.store.store(self._world, "*response-head*", head)
-        # self._world.app.store.store(self._world, "*response-body*", body)
+        assert body
 
         return web.Response(body=body, status=status, reason=reason, headers=headers)
 
@@ -86,25 +110,29 @@ class Request:
         headers = {k.lower(): v for k, v in req.headers.items()}
         body = await req.read()
 
+        meth_url = f"{req.method} {req.rel_url}".encode("ascii")
         head = jsonn.dumps(headers).encode()
         match = jsonn.dumps(req.match_info).encode()
-        world.app.store.store(world, "*request-url*", bytes(req.rel_url))
+        world.app.store.store(world, "*request-url*", meth_url)
         world.app.store.store(world, "*request-match*", match)
         world.app.store.store(world, "*request-head*", head)
         world.app.store.store(world, "*request-body*", body)
 
-        return cls(world, req.rel_url, req.match_info, headers, body)
+        meth: ... = req.method  # cast str to literal
+        return cls(world, meth, req.rel_url, req.match_info, headers, body, req)
 
     @classmethod
     def _from_storage(cls, world: World):
-        rel_url = world.app.store.load(world, "*request-url*")
+        meth_url = world.app.store.load(world, "*request-url*")
         match = world.app.store.load(world, "*request-match*")
         head = world.app.store.load(world, "*request-head*")
         body = world.app.store.load(world, "*request-body*")
         headers = jsonn.loads(head)
         match_info = jsonn.loads(match)
+        meth, _, rel_url = meth_url.decode("ascii").partition(" ")
 
-        return cls(world, URL(rel_url.decode()), match_info, headers, body)
+        meth: ... = meth  # cast str to literal
+        return cls(world, meth, URL(rel_url), match_info, headers, body, None)
 
     @classmethod
     def _from_bytes(cls, world: World, payload: bytes):
@@ -117,19 +145,6 @@ HttpHandler = (
     | Callable[[World, Request], AsyncGenerator[web.StreamResponse]]
 )
 _HttpHandler_ = TypeVar("_HttpHandler_", bound=HttpHandler)
-
-MethodStr = Literal[
-    "*",
-    "CONNECT",
-    "HEAD",
-    "GET",
-    "DELETE",
-    "OPTIONS",
-    "PATCH",
-    "POST",
-    "PUT",
-    "TRACE",
-]
 
 _Bind = tuple[str, int] | PurePath
 

@@ -10,6 +10,7 @@ from aiohttp import web
 
 from ..app import App
 from ..events.file import Path
+from ..events.web import Request
 from ..world import World
 from . import procs
 from .procs import Interact
@@ -18,7 +19,7 @@ _logger = getLogger(__name__)
 
 
 @overload
-async def shell(world: World, req: web.Request, /) -> web.StreamResponse: ...
+async def shell(world: World, req: Request, /) -> web.StreamResponse: ...
 @overload
 async def shell(world: World, file: Path, /) -> None: ...
 
@@ -29,20 +30,21 @@ async def _rpc(req: str, app: App, io: Interact) -> object:
     return await getattr(procs, name)(*args, app=app, io=io)
 
 
-async def shell(world: World, arg: web.Request | Path, /) -> web.StreamResponse | None:
+async def shell(world: World, arg: Request | Path, /) -> web.StreamResponse | None:
     """ """
 
-    if isinstance(arg, web.Request):
+    if isinstance(arg, Request):
         req = arg
         res = web.WebSocketResponse()
-        await res.prepare(req)
+        assert req._req, "not a real request? (crafted or replayed?)"
+        await res.prepare(req._req)
         _logger.info("websocket connection established")
 
         try:
+            io = Interact(res.receive_bytes, res.send_bytes)
             async for msg in res:
                 match msg.type:
-                    case WSMsgType.BINARY:
-                        io = Interact(res.receive_bytes, res.send_bytes)
+                    case WSMsgType.TEXT | WSMsgType.BINARY:
                         await res.send_json(await _rpc(str(msg.data), world.app, io))
                     case WSMsgType.ERROR:
                         _logger.warning("websocket exception %s", res.exception())
@@ -52,6 +54,7 @@ async def shell(world: World, arg: web.Request | Path, /) -> web.StreamResponse 
         except:
             await res.close()
             raise
+
         _logger.info("websocket connection terminated")
         return res
 
