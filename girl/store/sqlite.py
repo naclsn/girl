@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
@@ -6,7 +7,8 @@ from sqlite3 import Connection
 import aiosqlite
 
 from .base import Base
-from .base import LoadedRun
+from .base import RunInfoFull
+from .base import RunInfoPartial
 
 
 class BackendSqlite(Base):
@@ -31,6 +33,16 @@ class BackendSqlite(Base):
             self._conn = path_or_conn
         else:
             self._path = Path(path_or_conn)
+
+        # `storerun` (see method) has 3 aiosqlite calls;
+        # aiosqlite enqueues operations and sends them to the sqlite thread,
+        # however with each being separate `await` statement there could be
+        # other operation mingled - tldr we need `storerun` to be atomic from
+        # event loop point of view
+        # can you do that with a simple dum `bool`? yes because asyncio cannot
+        # interrupt nor reorder statements; but hey!
+        self._store_grouping_lock = asyncio.Lock()
+
         self.roll_nb_entries = roll_nb_entries
         self.roll_old_entries = roll_old_entries
         # self.roll_total_bytes = roll_total_bytes
@@ -73,43 +85,80 @@ class BackendSqlite(Base):
                 (delts, delts),
             )
 
-    async def storerun(self, id: str, runid: str, run: LoadedRun):
-        """"""
-        ts, data = run
-        await self._conn.execute(
-            r"INSERT INTO event_runs VALUES (?, ?, ?)",
-            (id, runid, ts),
-        )
-        await self._conn.executemany(
-            r"INSERT INTO run_data VALUES (?, ?, ?, ?)",
-            [(runid, key, ts, data) for key, (ts, data) in data.items()],
-        )
-        await self._conn.commit()
-        await self._roll_vacuum()
+    @staticmethod
+    def _to_tagstr(tags: set[str]) -> str:
+        return f"\t{'\t'.join(sorted(tags))}\t"
 
-    async def loadrun(self, id: str, runid: str):
+    @staticmethod
+    def _from_tagstr(tagstr: str) -> set[str]:
+        return set(tagstr[1:-1].split("\t")) if 2 < len(tagstr) else set()
+
+    async def storerun(self, id: str, runid: str, run: RunInfoFull):
+        """"""
+        # see comment at `__init__`
+        async with self._store_grouping_lock:
+            await self._conn.execute(
+                r"INSERT INTO event_runs VALUES (?, ?, ?, ?)",
+                (id, runid, run.ts, self._to_tagstr(run.tags)),
+            )
+            await self._conn.executemany(
+                r"INSERT INTO run_data VALUES (?, ?, ?, ?)",
+                [(runid, key, ts, data) for key, (ts, data) in run.data.items()],
+            )
+            await self._conn.commit()
+            await self._roll_vacuum()
+
+    async def loadrun(self, runid: str):
         """"""
         c = await self._conn.execute(
-            r"SELECT ts FROM event_runs WHERE ? = id AND ? = runid",
-            (id, runid),
+            r"SELECT ts, tags FROM event_runs WHERE ? = runid",
+            (runid,),
         )
         if (one := await c.fetchone()) is None:
             raise LookupError(f"no run for {id!r} {runid!r}")
-        ts = one[0]
+        ts, tagstr = one
         all = await self._conn.execute_fetchall(
-            r"SELECT key, ts, data FROM event_runs WHERE ? = id AND ? = runid",
-            (id, runid),
+            r"SELECT key, ts, data FROM run_data WHERE ? = runid ORDER BY ts",
+            (runid,),
         )
         data = {key: (ts, data) for key, ts, data in all}
-        return (ts, data)
+        return RunInfoFull(ts, runid, self._from_tagstr(tagstr), data)
 
-    async def listruns(self, id: str):
+    async def listruns(
+        self,
+        id: str,
+        *,
+        min_ts: float,
+        max_ts: float,
+        any_tag: set[str],
+    ):
         """"""
-        all = await self._conn.execute_fetchall(
-            r"SELECT ts, runid FROM event_runs WHERE ? = id ORDER BY ts",
-            (id,),
+        # we insert user input in a 'LIKE' operand, so it's important to
+        # escape '%' and '_'; i used '!' just because (\\\\ could be confusing)
+        # using 'LIKE' means we get the unwanted ci, hence the pragma in aenter
+        sortags = sorted(
+            t.translate({ord("!"): "!!", ord("%"): "!%", ord("_"): "!_"})
+            for t in any_tag
         )
-        return list(map(tuple, all))
+        and_maybe_by_tag = (
+            "AND ("
+            + " OR ".join("tags LIKE '%\t'||?||'\t%' ESCAPE '!'" for _ in sortags)
+            + ")"
+            if any_tag
+            else ""
+        )
+        all = await self._conn.execute_fetchall(
+            rf"""
+ SELECT ts, runid, tags FROM event_runs
+ WHERE ? = id AND ts BETWEEN ? AND ? {and_maybe_by_tag}
+ ORDER BY ts
+ """,
+            (id, min_ts, max_ts, *sortags),
+        )
+        return [
+            RunInfoPartial(ts, runid, self._from_tagstr(tagstr))
+            for ts, runid, tagstr in all
+        ]
 
     async def status(self):
         c = await self._conn.execute(
@@ -125,11 +174,13 @@ class BackendSqlite(Base):
         self._conn = await (aiosqlite.connect(self._path) if self._path else self._conn)
         await self._conn.executescript(
             r"""
+ PRAGMA case_sensitive_like = true; -- see `list_runs`
  BEGIN;
  CREATE TABLE IF NOT EXISTS event_runs (
     id    TEXT             NOT NULL, -- eg. "localhost:8080 GET /hi"
     runid TEXT PRIMARY KEY NOT NULL, -- eg. "some-banana"
-    ts    REAL             NOT NULL)
+    ts    REAL             NOT NULL,
+    tags  TEXT             NOT NULL) -- eg. "\ttag1\ttag2\t" or empty "\t\t"
  STRICT, WITHOUT ROWID;
  CREATE TABLE IF NOT EXISTS run_data (
     runid TEXT             NOT NULL, -- eg. "some-banana"
@@ -144,5 +195,6 @@ class BackendSqlite(Base):
         )
 
     async def __aexit__(self, *_):
-        await self._conn.commit()
-        await self._conn.close()
+        # make sure pending worlds have been able to storerun properly
+        async with self._store_grouping_lock:
+            await self._conn.close()

@@ -84,14 +84,14 @@ class Request:
         reason: str | None = None,
         headers: dict[str, str] | None = None,
     ):
-        if 1 != (
+        if 1 < (
             (body is not None)
             + (text is not None)
             + (json is not Request._MISSING)
             + (file is not None)
         ):
             raise ValueError(
-                "exactly one of 'body', 'text', 'json' or 'file' must be given"
+                "at most one of 'body', 'text', 'json' or 'file' must be given"
             )
 
         if file is not None:
@@ -101,9 +101,14 @@ class Request:
             text = jsonn.dumps(json)
         if text is not None:
             body = text.encode()
-        assert body
 
-        return web.Response(body=body, status=status, reason=reason, headers=headers)
+        return web.Response(
+            body=body,
+            status=status,
+            reason=reason,
+            headers=headers,
+            content_type=None if json is Request._MISSING else "application/json",
+        )
 
     @classmethod
     async def _from_aiohttp(cls, world: World, req: web.Request):
@@ -257,7 +262,10 @@ class EventsWeb(Base):
 
     async def __aenter__(self):
         async def _serv(bind: _Bind, app: web.Application):
-            runn = web.AppRunner(app)
+            # default timeout is 60s, however it's not rare to have eg
+            # an active ws connection at shutdown in which case it makes
+            # no sense waiting that long; pack up and leave asap
+            runn = web.AppRunner(app, shutdown_timeout=0.1)
             await runn.setup()
 
             if isinstance(bind, tuple):

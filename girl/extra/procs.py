@@ -2,7 +2,6 @@
 
 import asyncio
 import sys
-from pydoc import Helper
 from codeop import compile_command
 from collections.abc import Awaitable
 from datetime import datetime
@@ -10,6 +9,7 @@ from fnmatch import fnmatchcase
 from functools import wraps
 from logging import getLogger
 from pdb import Pdb
+from pydoc import Helper
 from traceback import format_exception
 from typing import Callable
 from typing import TypeVar
@@ -153,6 +153,7 @@ async def lsevents(
     filt: str = "all:*",
     min_ts: float | str | datetime = 0,
     max_ts: float | str | datetime = 10e10,
+    any_tag: set[str] | list[str] | None = None,
     /,
     *,
     app: App,
@@ -167,15 +168,20 @@ async def lsevents(
         max_ts = max_ts.timestamp()
     if max_ts <= min_ts:
         raise ValueError(f"broken timestamp range: {max_ts} <= {min_ts}")
-
     return {
-        id: [
-            (ts, runid)
-            for ts, runid in await app.store.listruns(id)
-            if min_ts <= ts < max_ts
-        ]
+        id: await app.store.listruns(
+            id,
+            min_ts=min_ts,
+            max_ts=max_ts,
+            any_tag={t.strip() for t in any_tag or () if t.strip()},
+        )
         for id in await lshandlers(filt, app=app)
     }
+
+
+@_proc
+async def lsdata(runid: str, /, *, app: App):
+    return await app.store.retrieverun(runid)
 
 
 class _RawPdb:
@@ -201,7 +207,7 @@ class _RawPdb:
             # at minima be outside of the pacifier but xxx don't like it
             f = sys._getframe().f_back.f_back
         '''"""
-        f = sys._getframe().f_back.f_back  # '''
+        f = sys._getframe(2)  # '''
         d.set_trace(f)
 
     def storing(self, world: "World", key: str, ts: float, data: bytes):

@@ -1,10 +1,83 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>idk</title>
-</head>
-<body>
-    <ul id="notifs"></ul>
-    <script src="script.js"></script>
-</body>
+    <head>
+        <title>app - Notif (Inspect Runs)</title>
+        <meta charset="UTF-8" />
+        <script src="script.js"></script>
+        <style>
+            body {
+                display: flex;
+                background: #f0f;
+                margin: 0;
+                padding: 0;
+                height: 100vh;
+                width: 100vw;
+                overflow: clip;
+            }
+            notif-list {
+                width: 15rem;
+            }
+            #main {
+                flex: 1;
+                height: 100%;
+                background: #0aa;
+                overflow: auto;
+            }
+        </style>
+
+        <template id="notif-list">
+            <style>
+                :host {
+                    display: flex;
+                    flex-direction: column;
+                }
+                #list {
+                    flex: 1;
+                    overflow-y: scroll;
+                    margin: 0;
+                    padding: 7px;
+                }
+            </style>
+            <div>
+                <input id="tags" type="search" placeholder="tags..." />
+                <details>
+                    <summary>v</summary>
+                    <input type="datetime-local" id="min-date" />
+                    <input type="datetime-local" id="max-date" />
+                    <button id="force-search">search</button>
+                    <button id="clear-results">clear</button>
+                </details>
+            </div>
+            <ol id="list"></ol>
+        </template>
+
+        <!--template id="notif-list-item">
+            <button title="tags">date <sub>runid</sub></button>
+        </template-->
+
+        <template id="notif-details">
+            <style>
+                .tag {
+                    background: var(--c);
+                    color: white;
+                    border: none;
+                    border-radius: 99px;
+                    padding: 1px 12px;
+                }
+                #x { float: left }
+                /*#runid { float: right }*/
+            </style>
+            <button id="x">x</button>
+            <h2 id="runid"></h2>
+            <div id="tags"></div>
+            <details id="data">
+                <summary>data</summary>
+            </details>
+        </template>
+    </head>
+
+    <body>
+        <notif-list></notif-list>
+        <div id="main"></div>
+    </body>
 </html>

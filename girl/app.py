@@ -37,7 +37,7 @@ class _Hook(Generic[*_P]):
 class _AppHooks:
     def __init__(self):
         self.start = _Hook[()]("start")
-        self.submit = _Hook[str, str, float]("submit")
+        self.submit = _Hook[str, str, float, set[str]]("submit")
         self.stop = _Hook[()]("stop")
 
 
@@ -50,14 +50,14 @@ class App:
         self.cron = EventsCron(self)
         self.file = EventsFile(self)
         self.web = EventsWeb(self)
-        self._readies = list[Callable[[], Awaitable[None]]]()
+        self._readies = set[Callable[[], Awaitable[None]]]()
 
     def summary(self) -> str:
         return self.cron.summary() + self.file.summary() + self.web.summary()
 
     def ready(self, cb: Callable[[], Awaitable[None]]):
         """ """
-        self._readies.append(cb)
+        self._readies.add(cb)
         return cb
 
     async def _status(self):

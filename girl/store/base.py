@@ -1,5 +1,6 @@
 from abc import ABC
 from abc import abstractmethod
+from dataclasses import dataclass
 from logging import getLogger
 from time import time
 from types import TracebackType
@@ -8,28 +9,40 @@ from ..world import World
 
 _logger = getLogger(__name__)
 
-LoadedRun = tuple[float, dict[str, tuple[float, bytes]]]  # XXX: wth
-"""in-memory run"""
+
+@dataclass(frozen=True, slots=True)
+class RunInfoPartial:
+    ts: float
+    runid: str
+    tags: set[str]
+
+
+@dataclass(frozen=True, slots=True)
+class RunInfoFull(RunInfoPartial):
+    data: dict[str, tuple[float, bytes]]
 
 
 class Base(ABC):
     """ """
 
     @abstractmethod
-    async def storerun(self, id: str, runid: str, run: LoadedRun):
+    async def storerun(self, id: str, runid: str, run: RunInfoFull):
         """ """
 
     @abstractmethod
-    async def loadrun(self, id: str, runid: str) -> LoadedRun:
+    async def loadrun(self, runid: str) -> RunInfoFull:
         """ """
 
     @abstractmethod
-    async def listruns(self, id: str) -> list[tuple[float, str]]:
+    async def listruns(
+        self,
+        id: str,
+        *,
+        min_ts: float,
+        max_ts: float,
+        any_tag: set[str],
+    ) -> list[RunInfoPartial]:
         """ """
-
-    # @abstractmethod
-    # async def search(self) -> ...:
-    #     """ """
 
     @abstractmethod
     async def status(self) -> str:
@@ -54,17 +67,16 @@ class Store:
 
     def __init__(self, backend: Base):
         self._backend = backend
-        self._ongoing = dict[tuple[str, str], LoadedRun]()
+        self._ongoing = dict[tuple[str, str], RunInfoFull]()
 
     def store(self, world: World, key: str, data: bytes):
         """ """
         # pacifier and context are responsible for asserting that
         # the run (runid) *does not* exists
         assert not world._pacifier or world._pacifier.is_new
-        pair = world.id, world.runid
         ts = time()
 
-        entries = self._ongoing[pair][1]
+        entries = self._ongoing[world.id, world.runid].data
         if key in entries:
             search_free = (f"{key} ({n})" for n in range(99))
             key = next(nkey for nkey in search_free if nkey not in entries)
@@ -79,9 +91,8 @@ class Store:
         # pacifier and context are responsible for asserting that
         # the run (runid) *actually* exists
         assert world._pacifier and not world._pacifier.is_new
-        pair = world.id, world.runid
 
-        entries = self._ongoing[pair][1]
+        entries = self._ongoing[world.id, world.runid].data
         if key not in entries:
             search_present = (f"{key} ({n})" for n in range(99))
             key = next(nkey for nkey in search_present if nkey in entries)
@@ -90,6 +101,10 @@ class Store:
         _logger.debug(f"load({world!r}, {key!r}): has %s", world._pacifier)
         data = world._pacifier.loading(world, key, ts, data)
         return data
+
+    def tagrun(self, world: World, tag: str):
+        assert not world._pacifier or world._pacifier.is_new
+        self._ongoing[world.id, world.runid].tags.add(tag)
 
     async def beginrun(self, world: World):
         """
@@ -101,10 +116,10 @@ class Store:
         if world._pacifier and not world._pacifier.is_new:
             _logger.debug(f"beginrun({world!r}): has %s", world._pacifier)
             if pair not in self._ongoing:
-                run = await self._backend.loadrun(world.id, world.runid)
+                run = await self._backend.loadrun(world.runid)
                 self._ongoing.setdefault(pair, run)
         else:
-            self._ongoing.setdefault(pair, (time(), {}))
+            self._ongoing.setdefault(pair, RunInfoFull(time(), world.runid, set(), {}))
 
     async def finishrun(self, world: World):
         """
@@ -117,14 +132,29 @@ class Store:
             del self._ongoing[(world.id, world.runid)]
         else:
             run = self._ongoing.pop((world.id, world.runid))
-            total = sum(len(data) for _, data in run[1].values())
-            _logger.info(f"flush {world!r} {len(run[1])} items {total} bytes")
+            total = sum(len(data) for _, data in run.data.values())
+            _logger.info(f"flush {world!r} {len(run.data)} items {total} bytes")
             await self._backend.storerun(world.id, world.runid, run)
-            await world.app.hook.submit.trigger(world.id, world.runid, run[0])
+            await world.app.hook.submit.trigger(world.id, world.runid, run.ts, run.tags)
 
-    async def listruns(self, id: str) -> list[tuple[float, str]]:
+    async def listruns(
+        self,
+        id: str,
+        *,
+        min_ts: float,
+        max_ts: float,
+        any_tag: set[str],
+    ) -> list[RunInfoPartial]:
         """ """
-        return await self._backend.listruns(id)
+        return await self._backend.listruns(
+            id,
+            min_ts=min_ts,
+            max_ts=max_ts,
+            any_tag=any_tag,
+        )
+
+    async def retrieverun(self, runid: str):
+        return await self._backend.loadrun(runid)
 
     async def __aenter__(self):
         """ """

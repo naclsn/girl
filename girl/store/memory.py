@@ -1,23 +1,36 @@
 from copy import deepcopy
 
 from .base import Base
-from .base import LoadedRun
+from .base import RunInfoFull
+from .base import RunInfoPartial
 
 
 class BackendMemory(Base):
     """ """
 
     def __init__(self):
-        self._runs = dict[str, dict[str, LoadedRun]]()
+        self._runs = dict[str, dict[str, RunInfoFull]]()
 
-    async def storerun(self, id: str, runid: str, run: LoadedRun):
+    async def storerun(self, id: str, runid: str, run: RunInfoFull):
         self._runs.setdefault(id, {})[runid] = run
 
-    async def loadrun(self, id: str, runid: str):
-        return deepcopy(self._runs[id][runid])
+    async def loadrun(self, runid: str):
+        bag = next(runs for runs in self._runs.values() if runid in runs)
+        return deepcopy(bag[runid])
 
-    async def listruns(self, id: str):
-        return [(ts, runid) for runid, (ts, _) in self._runs.get(id, {}).items()]
+    async def listruns(
+        self,
+        id: str,
+        *,
+        min_ts: float,
+        max_ts: float,
+        any_tag: set[str],
+    ):
+        return [
+            RunInfoPartial(run.ts, runid, run.tags)
+            for runid, run in self._runs.get(id, {}).items()
+            if min_ts <= run.ts < max_ts and any_tag & run.tags
+        ]
 
     async def status(self):
         return "(hellow)"

@@ -1,4 +1,5 @@
 import json
+from logging import getLogger
 from pathlib import PurePath
 from types import TracebackType
 from typing import Callable
@@ -11,6 +12,8 @@ import aiohttp
 from coolname import generate_slug
 
 from . import app
+
+_logger = getLogger(__name__)
 
 
 class PacifierLike(Protocol):  # xxx: for now a protocol, maybe later an ABC
@@ -48,7 +51,7 @@ class World:
         "_pacifier",
         "web",
         "file",
-        "share",
+        # "share",
     )
 
     def __init__(
@@ -71,6 +74,15 @@ class World:
     async def __aenter__(self):
         await self.app.store.beginrun(self)
         return self
+
+    def tag(self, tag: str):
+        """add a tag to the run"""
+        if not self._pacifier:
+            # 32 is ord(' '); all char before that are illegal -- see ascii(7)
+            if len(tag) < 30 and all(32 < ord(c) for c in tag):
+                self.app.store.tagrun(self, tag)
+            else:
+                _logger.warning(f"illegal character, tag ignored: {tag!r} in {self!r}")
 
     async def __aexit__(
         self,
