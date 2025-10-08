@@ -1,5 +1,6 @@
 from abc import ABC
 from abc import abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from logging import getLogger
 from time import time
@@ -8,6 +9,9 @@ from types import TracebackType
 from ..world import World
 
 _logger = getLogger(__name__)
+
+_CompressFunc = Callable[[bytes], bytes]
+_DecompressFunc = Callable[[bytes], bytes]
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,9 +69,31 @@ class Base(ABC):
 class Store:
     """ """
 
-    def __init__(self, backend: Base):
+    def __init__(
+        self,
+        backend: Base,
+        /,
+        *,
+        compress: _CompressFunc | None = None,
+        decompress: _DecompressFunc | None = None,
+    ):
         self._backend = backend
         self._ongoing = dict[tuple[str, str], RunInfoFull]()
+        self.compress = compress
+        self.decompress = decompress
+
+    async def _storerun(self, id: str, runid: str, run: RunInfoFull):
+        if cf := self.compress:
+            for key, (ts, data) in run.data.items():
+                run.data[key] = ts, cf(data)
+        await self._backend.storerun(id, runid, run)
+
+    async def _loadrun(self, runid: str) -> RunInfoFull:
+        run = await self._backend.loadrun(runid)
+        if df := self.decompress:
+            for key, (ts, data) in run.data.items():
+                run.data[key] = ts, df(data)
+        return run
 
     def store(self, world: World, key: str, data: bytes):
         """ """
@@ -116,7 +142,7 @@ class Store:
         if world._pacifier and not world._pacifier.is_new:
             _logger.debug(f"beginrun({world!r}): has %s", world._pacifier)
             if pair not in self._ongoing:
-                run = await self._backend.loadrun(world.runid)
+                run = await self._loadrun(world.runid)
                 self._ongoing.setdefault(pair, run)
         else:
             self._ongoing.setdefault(pair, RunInfoFull(time(), world.runid, set(), {}))
@@ -137,6 +163,10 @@ class Store:
             await self._backend.storerun(world.id, world.runid, run)
             await world.app.hook.submit.trigger(world.id, world.runid, run.ts, run.tags)
 
+    async def loadrun(self, runid: str):
+        """ """
+        return await self._loadrun(runid)
+
     async def listruns(
         self,
         id: str,
@@ -152,9 +182,6 @@ class Store:
             max_ts=max_ts,
             any_tag=any_tag,
         )
-
-    async def retrieverun(self, runid: str):
-        return await self._backend.loadrun(runid)
 
     async def __aenter__(self):
         """ """

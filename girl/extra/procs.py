@@ -181,7 +181,7 @@ async def lsevents(
 
 @_proc
 async def lsdata(runid: str, /, *, app: App):
-    return await app.store.retrieverun(runid)
+    return await app.store.loadrun(runid)
 
 
 class _RawPdb:

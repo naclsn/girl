@@ -9,7 +9,6 @@ from .events import EventsCron
 from .events import EventsFile
 from .events import EventsWeb
 from .store import Store
-from .store.base import Base as BackendBase
 
 _logger = getLogger(__name__)
 
@@ -44,9 +43,9 @@ class _AppHooks:
 class App:
     """ """
 
-    def __init__(self, store_backend: BackendBase):
+    def __init__(self, store: Store):
         self.hook = _AppHooks()
-        self.store = Store(store_backend)
+        self.store = store
         self.cron = EventsCron(self)
         self.file = EventsFile(self)
         self.web = EventsWeb(self)

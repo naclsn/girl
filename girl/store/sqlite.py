@@ -18,12 +18,16 @@ class BackendSqlite(Base):
         self,
         path_or_conn: str | Path | Connection | aiosqlite.Connection,
         /,
+        *,
         # only keep so many entries
         roll_nb_entries: int | None = None,
         # remove (lazily) entries older than this
         roll_old_entries: timedelta | None = None,
-        # keep (reported) size below this
-        # roll_total_bytes: float | None = None,
+        # vacuums when rolling and size is above this (in bytes);
+        # only ever usefull in combination with one of the other `roll_`
+        # it will also ever run an actual VACUUM if it can actually
+        # reclaim enough to get below this size
+        roll_vacuums_size: int | None = None,
     ):
         if isinstance(path_or_conn, Connection):
             self._path = None
@@ -45,13 +49,14 @@ class BackendSqlite(Base):
 
         self.roll_nb_entries = roll_nb_entries
         self.roll_old_entries = roll_old_entries
-        # self.roll_total_bytes = roll_total_bytes
+        self.roll_vacuums_size = roll_vacuums_size
 
     async def _roll_vacuum(self):
         # we'll be deleting all entries before this ts (so by default none);
         # the roll_.. by below do a `max(delts, ..)` meaning that whichever
         # option makes it delete most prevail
         delts = 0.0
+        also_vacuum = False
 
         if self.roll_nb_entries:
             # if asked to roll on nb of entries, find the one that would leave
@@ -70,18 +75,30 @@ class BackendSqlite(Base):
         if self.roll_old_entries:
             delts = max(delts, (datetime.now() - self.roll_old_entries).timestamp())
 
-        # if self.roll_total_bytes:
-        #   an estimate can be done with a complex select-sum(length(data))-join
-        #   but for now nei idc
+        if self.roll_vacuums_size and delts:
+            c = await self._conn.execute(
+                r"""
+     SELECT page_count * page_size as size, freelist_count
+     FROM pragma_page_count(), pragma_freelist_count(), pragma_page_size()
+     """,
+                (),
+            )
+            if size_free := await c.fetchone():
+                size, free = map(int, size_free)
+                also_vacuum = (
+                    self.roll_vacuums_size < size  # is too fat
+                    and size - free < self.roll_vacuums_size  # can reclaim enough
+                )
 
         if delts:
             await self._conn.executescript(
-                r"""
+                rf"""
  BEGIN;
  DELETE FROM event_runs WHERE ts <= ?;
  DELETE FROM run_data WHERE ts <= ?;
  COMMIT;
- """,  # VACUUM; -- don't vacuum, that would be too often
+ {'VACUUM;' if also_vacuum else ''}
+ """,
                 (delts, delts),
             )
 

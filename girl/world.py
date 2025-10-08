@@ -128,7 +128,17 @@ class _WorldWebProxy:
 
     @_proxies(aiohttp.ClientSession.request)
     async def request(self, method: ..., url: ..., **kwargs: ...):
-        await self._sess().request(method, url, **kwargs)
+        """not tracked"""
+        if self._world._pacifier:
+            await self._world._pacifier.performing(
+                self._world,
+                self.request,
+                method,
+                url,
+                **kwargs,
+            )
+        else:
+            await self._sess().request(method, url, **kwargs)
 
     @_proxies(aiohttp.ClientSession.request)
     async def request_bytes(self, method: ..., url: ..., **kwargs: ...) -> bytes:
