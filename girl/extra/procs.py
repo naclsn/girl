@@ -184,6 +184,11 @@ async def lsdata(runid: str, /, *, app: App):
     return await app.store.loadrun(runid)
 
 
+@_proc
+async def lstags(*, app: App):
+    return await app.store.knowntags()
+
+
 class _RawPdb:
     def __init__(self, is_new: bool, io: Interact):
         self.is_new = is_new

@@ -104,7 +104,7 @@ class BackendSqlite(Base):
 
     @staticmethod
     def _to_tagstr(tags: set[str]) -> str:
-        return f"\t{'\t'.join(sorted(tags))}\t"
+        return f"\t" + "\t".join(sorted(tags)) + "\t"
 
     @staticmethod
     def _from_tagstr(tagstr: str) -> set[str]:
@@ -121,6 +121,10 @@ class BackendSqlite(Base):
             await self._conn.executemany(
                 r"INSERT INTO run_data VALUES (?, ?, ?, ?)",
                 [(runid, key, ts, data) for key, (ts, data) in run.data.items()],
+            )
+            await self._conn.executemany(
+                r"INSERT INTO known_tags VALUES (?) ON CONFLICT DO NOTHING",
+                [(tag,) for tag in run.tags],
             )
             await self._conn.commit()
             await self._roll_vacuum()
@@ -177,6 +181,10 @@ class BackendSqlite(Base):
             for ts, runid, tagstr in all
         ]
 
+    async def knowntags(self):
+        all = await self._conn.execute_fetchall("SELECT tag FROM known_tags")
+        return set(str(t) for t, in all)
+
     async def status(self):
         c = await self._conn.execute(
             r"""
@@ -192,13 +200,16 @@ class BackendSqlite(Base):
         await self._conn.executescript(
             r"""
  PRAGMA case_sensitive_like = true; -- see `list_runs`
+
  BEGIN;
+
  CREATE TABLE IF NOT EXISTS event_runs (
     id    TEXT             NOT NULL, -- eg. "localhost:8080 GET /hi"
     runid TEXT PRIMARY KEY NOT NULL, -- eg. "some-banana"
     ts    REAL             NOT NULL,
     tags  TEXT             NOT NULL) -- eg. "\ttag1\ttag2\t" or empty "\t\t"
  STRICT, WITHOUT ROWID;
+
  CREATE TABLE IF NOT EXISTS run_data (
     runid TEXT             NOT NULL, -- eg. "some-banana"
     key   TEXT             NOT NULL, -- eg. "*request-body*" or "/some/file"
@@ -207,6 +218,11 @@ class BackendSqlite(Base):
     FOREIGN KEY(runid) REFERENCES event_runs(runid),
     PRIMARY KEY(runid, key))
  STRICT, WITHOUT ROWID;
+
+ CREATE TABLE IF NOT EXISTS known_tags (
+    tag   TEXT PRIMARY KEY NOT NULL)
+ STRICT, WITHOUT ROWID;
+
  COMMIT;
  """,
         )

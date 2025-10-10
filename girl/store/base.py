@@ -49,6 +49,10 @@ class Base(ABC):
         """ """
 
     @abstractmethod
+    async def knowntags(self) -> set[str]:
+        """ """
+
+    @abstractmethod
     async def status(self) -> str:
         """ """
 
@@ -182,6 +186,9 @@ class Store:
             max_ts=max_ts,
             any_tag=any_tag,
         )
+
+    async def knowntags(self) -> set[str]:
+        return await self._backend.knowntags()
 
     async def __aenter__(self):
         """ """

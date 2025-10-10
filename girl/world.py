@@ -75,14 +75,15 @@ class World:
         await self.app.store.beginrun(self)
         return self
 
-    def tag(self, tag: str):
+    def tag(self, *tags: str):
         """add a tag to the run"""
         if not self._pacifier:
-            # 32 is ord(' '); all char before that are illegal -- see ascii(7)
-            if len(tag) < 30 and all(32 < ord(c) for c in tag):
-                self.app.store.tagrun(self, tag)
-            else:
-                _logger.warning(f"illegal character, tag ignored: {tag!r} in {self!r}")
+            for tag in tags:
+                # 32 is ord(' '); all char before that are illegal -- see ascii(7)
+                if len(tag) < 30 and all(32 < ord(c) for c in tag):
+                    self.app.store.tagrun(self, tag)
+                else:
+                    _logger.warning(f"ignored illegal tag: {tag!r} in {self!r}")
 
     async def __aexit__(
         self,

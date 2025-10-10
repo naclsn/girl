@@ -1,5 +1,6 @@
 from . import procs
-from . import webui
 from .shell import shell
+from .webui import Webui
+from .webui import notif
 
-__all__ = ("procs", "shell", "webui")
+__all__ = ("procs", "shell", "Webui", "notif")
