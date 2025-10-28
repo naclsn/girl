@@ -8,13 +8,12 @@
         app_name: APP_NAME,
     } = await fetch('-/sitelocal.json').then(r => r.json());
 
-    if (BASIC_AUTH_PASSWD) {
-        function passwordRequired() {
-            return passwordRequired._credentials
-                || (passwordRequired._credentials = btoa(`:${prompt("babasdfbsa")}`));
-        }
-        passwordRequired._credentials = null;
-    } else function passwordRequired() { return ''; }
+    function passwordRequired() {
+        if (!BASIC_AUTH_PASSWD) return '';
+        return passwordRequired._credentials
+            || (passwordRequired._credentials = btoa(`:${prompt("babasdfbsa")}`));
+    }
+    passwordRequired._credentials = null;
 
     if (APP_NAME.length)
         document.title = `${APP_NAME} - ${document.title}`;
@@ -62,8 +61,9 @@
             this.max_date = this.shadowRoot.getElementById('max-date');
             this.list = this.shadowRoot.getElementById('list');
 
-            this.socket = new WebSocket(`ws://${location.host}${SUBPATH}/-/notif`);
+            this.socket = new WebSocket(`${'https:' === location.protocol ? 'wss:' : 'ws:'}//${location.host}${SUBPATH}/-/notif`);
             const hold_notifs_until_old_fetched = [];
+            this.socket.onopen = _ => this._attempts = 0;
             this.socket.onclose = e => 1000 === e.code || this.socketReconnect(e.code);
             this.socket.onerror = e => console.error(e);
             this.socket.onmessage = e => hold_notifs_until_old_fetched.push(JSON.parse(e.data));
@@ -96,9 +96,11 @@
                 console.warn("ws dc, re in 10s: " + this._attempts);
                 setTimeout(() => {
                     const niw = new WebSocket(this.socket.url);
+                    niw.onopen = this.socket.onopen;
                     niw.onclose = this.socket.onclose;
                     niw.onerror = this.socket.onerror;
                     niw.onmessage = this.socket.onmessage;
+                    this.socket.onopen = this.socket.onclose = this.socket.onerror = this.socket.onmessage = null;
                     this.socket = niw;
                 }, 10000);
             } else console.error("could not reconnect");

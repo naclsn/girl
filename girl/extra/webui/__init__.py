@@ -84,7 +84,7 @@ class Webui:
         return req.respond(
             json={
                 "subpath": self._subpath,
-                "basic_auth_passwd": self._basic_auth_passwd is None,
+                "basic_auth_passwd": self._basic_auth_passwd is not None,
                 "query_default_backrange": self._query_default_backrange,
                 "notif_limit": self._notif_limit,
                 "app_name": self._app_name,

@@ -80,7 +80,7 @@ class World:
         if not self._pacifier:
             for tag in tags:
                 # 32 is ord(' '); all char before that are illegal -- see ascii(7)
-                if len(tag) < 30 and all(32 < ord(c) for c in tag):
+                if len(tag) < 30 and all(32 <= ord(c) for c in tag):
                     self.app.store.tagrun(self, tag)
                 else:
                     _logger.warning(f"ignored illegal tag: {tag!r} in {self!r}")
