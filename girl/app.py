@@ -1,9 +1,17 @@
 import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
+from collections.abc import Iterable
+from collections.abc import Sequence
 from logging import getLogger
 from typing import Generic
+from typing import TypedDict
 from typing import TypeVarTuple
+
+import aiohttp
+import aiohttp.abc
+import aiohttp.helpers
+import aiohttp.typedefs
 
 from .events import EventsCron
 from .events import EventsFile
@@ -35,21 +43,50 @@ class _Hook(Generic[*_P]):
 
 class _AppHooks:
     def __init__(self):
-        self.start = _Hook[()]("start")
+        self.start = _Hook[*()]("start")
         self.submit = _Hook[str, str, float, set[str]]("submit")
-        self.stop = _Hook[()]("stop")
+        self.stop = _Hook[*()]("stop")
+
+
+class _AppSettings_WorldWeb(TypedDict, total=False):
+    cookies: aiohttp.typedefs.LooseCookies
+    headers: aiohttp.typedefs.LooseHeaders
+    proxy: aiohttp.typedefs.StrOrURL
+    proxy_auth: aiohttp.BasicAuth
+    skip_auto_headers: Iterable[str]
+    auth: aiohttp.BasicAuth
+    json_serialize: aiohttp.typedefs.JSONEncoder
+    cookie_jar: aiohttp.abc.AbstractCookieJar
+    raise_for_status: bool | Callable[[aiohttp.ClientResponse], Awaitable[None]]
+    read_timeout: float
+    conn_timeout: float
+    ssl_shutdown_timeout: float
+    auto_decompress: bool
+    trust_env: bool
+    requote_redirect_url: bool
+    trace_configs: list[aiohttp.TraceConfig]
+    read_bufsize: int
+    max_line_size: int
+    max_field_size: int
+    middlewares: Sequence[aiohttp.ClientMiddlewareType]
+
+
+class _AppSettings(TypedDict, total=False):
+    world_web: _AppSettings_WorldWeb
+    slug_pattern: str | int
 
 
 class App:
     """ """
 
-    def __init__(self, store: Store):
+    def __init__(self, store: Store, app_settings: _AppSettings | None = None):
         self.hook = _AppHooks()
         self.store = store
         self.cron = EventsCron(self)
         self.file = EventsFile(self)
         self.web = EventsWeb(self)
         self._readies = set[Callable[[], Awaitable[None]]]()
+        self.settings = app_settings or {}
 
     def summary(self) -> str:
         return self.cron.summary() + self.file.summary() + self.web.summary()
@@ -101,8 +138,8 @@ class App:
                 _logger.info("Stopping")
                 await self.hook.stop.trigger()
 
-    def run(self):
+    def run(self, *, debug: bool | None = None):
         try:
-            asyncio.run(self())
+            asyncio.run(self(), debug=debug)
         except KeyboardInterrupt:
             pass

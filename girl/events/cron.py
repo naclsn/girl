@@ -197,6 +197,8 @@ class EventsCron(Base):
             _logger.error("Task %s raised an exception:", task, exc_info=e)
 
     async def _loop(self):
+        if not self._scheds:
+            return
         self._running = set[asyncio.Task[None]]()
 
         try:

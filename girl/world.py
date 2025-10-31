@@ -65,7 +65,7 @@ class World:
         self.app = app
 
         self.id = id
-        self.runid = runid or generate_slug()
+        self.runid = runid or generate_slug(app.settings.get("slug_pattern"))
         self._pacifier = pacifier
 
         self.file = _WorldFileProxy(self)
@@ -124,7 +124,8 @@ class _WorldWebProxy:
 
     def _sess(self):
         if self._inner is None:
-            self._inner = aiohttp.ClientSession()
+            se = self._world.app.settings.get("world_web") or {}
+            self._inner = aiohttp.ClientSession(**se)
         return self._inner
 
     @_proxies(aiohttp.ClientSession.request)
@@ -139,7 +140,7 @@ class _WorldWebProxy:
                 **kwargs,
             )
         else:
-            await self._sess().request(method, url, **kwargs)
+            (await self._sess().request(method, url, **kwargs)).close()
 
     @_proxies(aiohttp.ClientSession.request)
     async def request_bytes(self, method: ..., url: ..., **kwargs: ...) -> bytes:
