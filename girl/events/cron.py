@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Awaitable
 from collections.abc import Iterable
 from datetime import datetime
+from datetime import date
 from logging import getLogger
 from typing import Callable
 from typing import TypeVar
@@ -22,8 +23,8 @@ MONTHS = [
     ("march", "mar"),
     ("april", "apr"),
     ("may", "may"),
-    ("june", "jun", "june"),
-    ("july", "jul", "july"),
+    ("june", "jun"),
+    ("july", "jul"),
     ("august", "aug"),
     ("september", "sep", "sept"),
     ("october", "oct"),
@@ -31,24 +32,27 @@ MONTHS = [
     ("december", "dec"),
 ]
 DAYS = [
-    ("sunday", "sun"),
-    ("monday", "mon"),
+    ("monday", "mon"),  # datetime monday is 0
     ("tuesday", "tue", "tues"),
     ("wednesday", "wed"),
     ("thursday", "thu", "thur", "thurs"),
     ("friday", "fri"),
     ("saturday", "sat"),
+    ("sunday", "sun"),
 ]
 
 
 class _Schedule:
-    __slots__ = ("_minutes", "_hours", "_days", "_months", "_after", "_before")
+    __slots__ = "_minutes", "_hours", "_days", "_months", "_wdays", "_after", "_before"
 
     @staticmethod
-    def _valid(it: int | Iterable[int] | None, r: range, unit: str):
-        ls = [it] if isinstance(it, int) else sorted(set(it)) if it else []
-        if not ls:
-            return ls
+    def _valid(it: int | Iterable[int], r: range, unit: str) -> list[int]:
+        st = {it} if isinstance(it, int) else set(it)
+        if not st:
+            return []
+        if any(isinstance(it, str) for it in st):  # special known case
+            raise ValueError("cannot mix month days and weekdays")
+        ls = sorted(st)
         if ls[0] not in r:
             raise ValueError(f"invalid {unit}: {ls[0]} not in {r}")
         if ls[-1] not in r:
@@ -59,32 +63,51 @@ class _Schedule:
         self,
         minutes: int | Iterable[int],
         hours: int | Iterable[int],
-        days: int | Iterable[int],  # weekdays: str | Iterable[str]
+        days: int | Iterable[int] | str | Iterable[str],
         months: int | str | Iterable[int | str],
         after: datetime | None = None,
         before: datetime | None = None,
     ):
+        if after is not None and before is not None and before <= after:
+            raise ValueError(f"'after' must precede 'before': {before!r} <= {after!r}")
+
+        self._minutes = _Schedule._valid(minutes, range(0, 60), "minutes")
+        self._hours = _Schedule._valid(hours, range(0, 24), "hours")
+
+        days: ... = [days] if isinstance(days, (int, str)) else list(iter(days))
+        self._days = self._wdays = None
+        if not days:
+            pass
+        elif isinstance(days[0], int):
+            self._days = _Schedule._valid(days, range(1, 32), "days")
+        else:
+            wdays = set[int]()
+            for d in days:
+                if not isinstance(d, str):
+                    raise ValueError("cannot mix month days and weekdays")
+                dd = d.strip().lower()
+                d = next((d for d, nam in enumerate(DAYS) if dd in nam), None)
+                if d is None:
+                    raise ValueError(f"invalid day name {dd!r}")
+                wdays.add(d)
+            self._wdays = sorted(wdays)
+
         months = iter((months,) if isinstance(months, (int, str)) else months)
-        self._minutes = self._valid(minutes, range(0, 60), "minutes")
-        self._hours = self._valid(hours, range(0, 24), "hours")
-        self._days = self._valid(days, range(1, 32), "days")
         self._months = list[int]()
         for m in months:
             if isinstance(m, str):
-                m = m.strip().lower()
-                for month, nam in enumerate(MONTHS):
-                    if m in nam:
-                        break
-                else:
-                    raise ValueError(f"invalid month name {m!r}")
-                m = month
+                mm = m.strip().lower()
+                m = next((m + 1 for m, nam in enumerate(MONTHS) if mm in nam), None)
+                if m is None:
+                    raise ValueError(f"invalid month name {mm!r}")
             self._months.append(m)
-        self._months = self._valid(self._months, range(1, 13), "months")
+        self._months = _Schedule._valid(self._months, range(1, 13), "months")
+
         self._after = after
         self._before = before
 
     @staticmethod
-    def _present(ls: list[int]):
+    def _present(ls: list[int] | None):
         if not ls:
             return "*"
         s = ""
@@ -103,32 +126,54 @@ class _Schedule:
         hours = self._present(self._hours)
         days = self._present(self._days)
         months = self._present(self._months)
-        r = f"{minutes} {hours} {days} {months}"
+        wdays = (
+            " " + ",".join(DAYS[w][1].capitalize() for w in self._wdays)
+            if self._wdays
+            else ""
+        )
+        r = f"{minutes} {hours} {days} {months}{wdays}"
         if self._after:
             r = f"{self._after!r} <= {r}"
         if self._before:
             r = f"{r} <= {self._before!r}"
         return r
 
-    def __next__(self) -> datetime:
-        now = datetime.now()
+    def next_from(self, now: datetime) -> datetime | None:
         if self._after and now < self._after:
-            return self._after
+            return self.next_from(self._after)
         if self._before and self._before < now:
-            raise StopIteration
-        for year in range(now.year, now.year + 2):
+            return None
+
+        for year in range(now.year, now.year + 4):
             for month in self._months or range(1, 13):
+                # in the same year, we can skip month that are before
+                if year == now.year and month < now.month:
+                    continue
+
                 for day in self._days or range(1, 32):
+                    # in the same year and month, can skip days that are before
+                    if year == now.year and month == now.month and day < now.day:
+                        continue
+
                     try:
-                        datetime(year, month, day)
+                        wday = date(year, month, day).weekday()
+                        if self._wdays and wday not in self._wdays:
+                            continue  # skip this weekday
                     except ValueError:
                         break  # invalid day for month (eg 31)
+
                     for hour in self._hours or range(0, 24):
                         for minute in self._minutes or range(0, 60):
                             candidate = datetime(year, month, day, hour, minute)
                             if candidate <= now:
                                 continue
+                            if self._before and self._before < candidate:
+                                break
                             return candidate
+
+    def __next__(self) -> datetime:  # pragma: no cover
+        if r := self.next_from(datetime.now()):
+            return r
         raise StopIteration
 
 
@@ -149,7 +194,7 @@ class EventsCron(Base):
         self,
         minutes: int | Iterable[int],
         hours: int | Iterable[int],
-        days: int | Iterable[int],  # weekdays: str | Iterable[str]
+        days: int | Iterable[int] | str | Iterable[str],
         months: int | str | Iterable[int | str],
         *,
         after: datetime | None = None,
@@ -157,8 +202,6 @@ class EventsCron(Base):
     ):
         """ """
 
-        if after is not None and before is not None and before <= after:
-            raise ValueError(f"'after' must precede 'before': {before!r} <= {after!r}")
         sched = _Schedule(minutes, hours, days, months, after, before)
 
         id = str(sched)
