@@ -108,10 +108,12 @@
 
         /** @param {Notif} notif */
         _activeFilter(notif) {
-            // matches if: no `any_tag` filter, or any notif.tag in the set
-            const matches = !this.tags.current_tags.size
-                || notif.tags.some(this.tags.current_tags.has.bind(this.tags.current_tags));
-            return matches;
+            // no filter at all
+            if (!this.tags.current_tags.size) return true;
+            return (
+                notif.tags.some(this.tags.current_tags.has.bind(this.tags.current_tags)) // any notif.tag in the set
+                || this.tags.current_tags.has(notif.runid)                               // OR consider runid as a tag positively only
+            ) && notif.tags.every(t => !this.tags.current_tags.has('-' + t)); // AND none of the tag is present negatively
         }
 
         pushNotif({ id, runid, ts, tags }) {
@@ -229,6 +231,7 @@
             for (const tag of add_tags) {
                 hasnew = hasnew || this.all_known_tags.has(tag);
                 this.all_known_tags.add(tag);
+                this.all_known_tags.add('-' + tag);
             }
             if (hasnew) {
                 this.datalist.innerHTML = '';
