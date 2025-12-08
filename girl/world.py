@@ -1,6 +1,7 @@
 import json
 from logging import getLogger
 from pathlib import PurePath
+from traceback import format_exception
 from types import TracebackType
 from typing import Callable
 from typing import Concatenate
@@ -93,6 +94,12 @@ class World:
     ):
         if self.web._inner is not None:
             await self.web._inner.close()
+
+        if exc_value is not None:
+            trace = "".join(format_exception(exc_value)).encode()
+            self.app.store.store(self, "*exception*", trace)
+            self.tag("exception", type(exc_value).__name__)
+
         await self.app.store.finishrun(self)
 
     def __repr__(self):

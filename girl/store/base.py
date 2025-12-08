@@ -159,7 +159,7 @@ class Store:
         """
         if world._pacifier and not world._pacifier.is_new:
             _logger.debug(f"finishrun({world!r}): has %s", world._pacifier)
-            del self._ongoing[(world.id, world.runid)]
+            del self._ongoing[world.id, world.runid]
         else:
             run = self._ongoing.pop((world.id, world.runid))
             total = sum(len(data) for _, data in run.data.values())

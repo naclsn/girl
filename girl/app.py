@@ -44,8 +44,16 @@ class _Hook(Generic[*_P]):
 class _AppHooks:
     def __init__(self):
         self.start = _Hook[*()]("start")
+        """ triggered when the app starts, after `@app.ready`;
+           contrary to `@app.ready` exceptions are ignored
+        """
         self.submit = _Hook[str, str, float, set[str]]("submit")
+        """ triggered when finishing a "real event" run,
+            after storing it
+        """
         self.stop = _Hook[*()]("stop")
+        """ triggered when the app stops, before stopping events
+        """
 
 
 class _AppSettings_WorldWeb(TypedDict, total=False):
@@ -105,7 +113,7 @@ class App:
             return
 
         _logger.info("status:")
-        for n in ("VmPeak", "VmSize", "Threads"):
+        for n in "VmPeak", "VmSize", "Threads":
             _logger.info(f"    {n}: {status.get(n, '?').strip()}")
 
         backend = self.store._backend

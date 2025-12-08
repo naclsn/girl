@@ -14,10 +14,10 @@ skip_gitignore = true
 
 [tool.poetry]
 authors = ["celest <celestin.grenier@mhcomm.fr>"]
-description = ""
+description = "Generic asyncio-based even handling (web, file system, cron, ..)"
 name = "girl"
 readme = "README.md"
-version = "0.1.0"
+version = "0.1.3"
 
 [tool.poetry.dependencies]
 aiohttp = "^3.12.13"

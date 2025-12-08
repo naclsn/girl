@@ -1,6 +1,7 @@
 """"""
 
 from base64 import b64decode
+from collections.abc import Iterable
 from logging import getLogger
 from pathlib import PurePath
 
@@ -46,6 +47,7 @@ class Webui:
         subpath: str,
         /,
         *,
+        tags: Iterable[str] = (),
         basic_auth_passwd: str | None = None,
         # by default, queries go [now-that .. now]; this includes:
         #  - the initial query at page load
@@ -58,6 +60,7 @@ class Webui:
         favicon_path: str | PurePath | None = None,
     ):
         self._subpath = subpath
+        self._tags = list(tags)
         self._basic_auth_passwd = basic_auth_passwd
         self._query_default_backrange = query_default_backrange
         self._notif_limit = notif_limit
@@ -72,7 +75,20 @@ class Webui:
         app.web.event(bind, "GET", f"{subpath}/-/api/tags")(self._api_tags)
         app.web.event(bind, "GET", f"{subpath}/-/notif")(notif)
 
-    async def _serve(self, _world: World, req: Request):
+    @property
+    def sitelocal(self):
+        return {
+            "subpath": self._subpath,
+            "tags": self._tags,
+            "basic_auth_passwd": self._basic_auth_passwd is not None,
+            "query_default_backrange": self._query_default_backrange,
+            "notif_limit": self._notif_limit,
+            "app_name": self._app_name,
+            "favicon_path": self._favicon_path,
+        }
+
+    async def _serve(self, world: World, req: Request):
+        world.tag(*self._tags)
         file = req.match_info.get("file") or "index.html"
         _logger.info(f"get: {file}")
         if "favicon.ico" == file and self._favicon_path != None:
@@ -80,23 +96,17 @@ class Webui:
             _logger.info(f"now: {file}")
         return req.respond(file=_STATIC_ROOT / file)
 
-    async def _sitelocal(self, _world: World, req: Request):
-        return req.respond(
-            json={
-                "subpath": self._subpath,
-                "basic_auth_passwd": self._basic_auth_passwd is not None,
-                "query_default_backrange": self._query_default_backrange,
-                "notif_limit": self._notif_limit,
-                "app_name": self._app_name,
-                "favicon_path": self._favicon_path,
-            }
-        )
+    async def _sitelocal(self, world: World, req: Request):
+        world.tag(*self._tags)
+        return req.respond(json=self.sitelocal)
 
     async def _api_handlers(self, world: World, req: Request):
+        world.tag(*self._tags)
         filter = req.rel_url.query.get("filter", "all:*")
         return req.respond(json=await procs.lshandlers(filter, app=world.app))
 
     async def _api_events(self, world: World, req: Request):
+        world.tag(*self._tags)
         filter = req.rel_url.query.get("filter", "all:*")
         min_ts = req.rel_url.query.get("min_ts", "0")
         max_ts = req.rel_url.query.get("max_ts", "10e10")  # (consistent with lsevents)
@@ -121,6 +131,7 @@ class Webui:
         )
 
     async def _api_data(self, world: World, req: Request):
+        world.tag(*self._tags)
         if self._basic_auth_passwd:
             auth = req.header("Authorization")
             if not auth or not "basic " == auth[:6].lower():
@@ -155,4 +166,5 @@ class Webui:
         )
 
     async def _api_tags(self, world: World, req: Request):
+        world.tag(*self._tags)
         return req.respond(json=sorted(await procs.lstags(app=world.app)))
