@@ -111,9 +111,10 @@
             // no filter at all
             if (!this.tags.current_tags.size) return true;
             return (
-                notif.tags.some(this.tags.current_tags.has.bind(this.tags.current_tags)) // any notif.tag in the set
-                || this.tags.current_tags.has(notif.runid)                               // OR consider runid as a tag positively only
-            ) && notif.tags.every(t => !this.tags.current_tags.has('-' + t)); // AND none of the tag is present negatively
+                !this.tags.current_has_positive_tags                         // no positive tags in the set
+                || notif.tags.some(t => this.tags.current_tags.has(t))       // OR any notif.tag in the set
+                || this.tags.current_tags.has(notif.runid)                   // OR consider runid as a tag positively only
+            ) && !notif.tags.some(t => this.tags.current_tags.has('-' + t)); // AND none of the tag is present negatively
         }
 
         pushNotif({ id, runid, ts, tags }) {
@@ -132,7 +133,7 @@
             const now = Date.now() / 1000;
             url.searchParams.append('min_ts', this.min_date.valueAsDate / 1000 || now - QUERY_DEFAULT_BACKRANGE);
             url.searchParams.append('max_ts', this.max_date.valueAsDate / 1000 || now);
-            for (const tag of this.tags.current_tags) url.searchParams.append('any_tag', tag);
+            for (const tag of this.tags.current_tags) if ('-' != tag[0]) url.searchParams.append('any_tag', tag);
 
             fetch(url)
                 .then(r => r.json())
@@ -172,6 +173,7 @@
         /** @type {HTMLInputElement} */ text;
         /** @type {HTMLDataListElement} */ datalist;
         /** @type {Set<string>} */ current_tags = new Set;
+        /** @type {number} */ current_has_positive_tags = 0;
         /** @type {Set<string>} */ all_known_tags = new Set;
 
         constructor() {
@@ -202,6 +204,7 @@
             tag = tag.trim();
             if (!tag.length || this.current_tags.has(tag)) return;
             this.current_tags.add(tag);
+            this.current_has_positive_tags += '-' != tag[0];
 
             const pill = document.createElement(TagPillCE.tag);
             pill.setTag(tag);
@@ -213,6 +216,8 @@
         deleteTag(tag) {
             if (!this.current_tags.has(tag)) return;
             this.current_tags.delete(tag);
+            this.current_has_positive_tags -= '-' != tag[0];
+
             /** @type {TagPillCE} */
             let e = this.text;
             while ((e = e.previousElementSibling) && tag !== e.tag);

@@ -6,7 +6,10 @@ from .base import RunInfoPartial
 
 
 class BackendMemory(Base):
-    """ """
+    """Dumb store backend that just uses a dictionary.
+
+    Of course, everything is lost at interpreter shutdown.
+    """
 
     def __init__(self):
         self._runs = dict[str, dict[str, RunInfoFull]]()
@@ -31,7 +34,7 @@ class BackendMemory(Base):
         return [
             RunInfoPartial(run.ts, runid, run.tags)
             for runid, run in self._runs.get(id, {}).items()
-            if min_ts <= run.ts < max_ts and any_tag & run.tags
+            if min_ts <= run.ts < max_ts and (not any_tag or any_tag & run.tags)
         ]
 
     async def knowntags(self):

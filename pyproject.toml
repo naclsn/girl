@@ -31,6 +31,7 @@ optional = true
 
 [tool.poetry.group.ci.dependencies]
 coverage = "^7.8.0"
+pydoctor = "^25.10.1"
 pytest = "^7.4.4"
 
 [tool.poetry.group.dev]

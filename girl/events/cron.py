@@ -43,7 +43,7 @@ DAYS = [
 
 
 class _Schedule:
-    __slots__ = "_minutes", "_hours", "_days", "_months", "_wdays", "_after", "_before"
+    __slots__ = ("_minutes", "_hours", "_days", "_months", "_wdays", "_after", "_before")
 
     @staticmethod
     def _valid(it: int | Iterable[int], r: range, unit: str) -> list[int]:
@@ -178,6 +178,8 @@ class _Schedule:
 
 
 class EventsCron(Base):
+    """Event engine somewhat akin to crontab lines."""
+
     def __init__(self, app: "app.App"):
         self._app = app
         self._handlers = dict[str, Handler[CronHandler]]()
@@ -200,7 +202,12 @@ class EventsCron(Base):
         after: datetime | None = None,
         before: datetime | None = None,
     ):
-        """ """
+        """Register a function to be called regularly.
+
+        Limitation: because the crontab line is used as a friendly id,
+        two handlers cannot have the same exact schedule.
+        """
+
 
         sched = _Schedule(minutes, hours, days, months, after, before)
 
@@ -240,6 +247,12 @@ class EventsCron(Base):
             _logger.error("Task %s raised an exception:", task, exc_info=e)
 
     async def _loop(self):
+        """The core task for this engine (implementation detail).
+
+        It basically consists in a loop over the registered schedules
+        to find the nearest one; it then waits this delay, runs it
+        and repeat.
+        """
         if not self._scheds:
             return
         self._running = set[asyncio.Task[None]]()
@@ -250,20 +263,35 @@ class EventsCron(Base):
                 _logger.info(f"    {sched} {handler.fn}")
 
             while self._scheds:
-                upcoming = datetime.max
-                handler = None
+                upcoming_dt = datetime.max
+                upcoming_id = None
+                allofthem = dict[str, datetime]()
 
+                # we enumerate in reverse so that it's safe to del[k]
+                # (following iteration items are still correct)
                 for k, (sched, h) in reversed(list(enumerate(self._scheds))):
-                    # removes schedules that are definitively done
-                    if (dt := next(sched, None)) is None:
+                    # if it was already in there, keep the old dt
+                    # (if we had passed it, it still needs to run)
+                    dt = allofthem.get(h.id, None) or next(sched, None)
+
+                    if dt is None:
+                        # removes schedules that are definitively done
                         del self._scheds[k]
                         continue
-                    if dt < upcoming:
-                        upcoming, handler = dt, h
-                if handler is None:
+
+                    allofthem[h.id] = dt
+                    if dt < upcoming_dt:
+                        upcoming_dt, upcoming_id = dt, h.id
+                # (nothing at all? check again.. this will probably
+                # break the loop, when self._scheds is empty)
+                if upcoming_id is None:
                     continue
 
-                await asyncio.sleep((upcoming - datetime.now()).total_seconds())
+                handler = self._handlers[upcoming_id]
+                delay = (upcoming_dt - datetime.now()).total_seconds()
+                if 0 < delay:
+                    await asyncio.sleep(delay)
+                allofthem.pop(upcoming_id)  # we'll be running this one now thanks
 
                 task = asyncio.create_task(self._task_make(handler.id, handler.fn))
                 self._running.add(task)

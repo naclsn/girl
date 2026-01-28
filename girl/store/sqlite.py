@@ -12,7 +12,32 @@ from .base import RunInfoPartial
 
 
 class BackendSqlite(Base):
-    """ """
+    """Back data by a couple of SQLite tables.
+
+    The ``path_or_conn`` constructor argument may be a file path-like
+    object in which the database will live (note that ``":memory:"``
+    is also valid, see :func:`sqlite3.connect` in the standard module).
+
+    When it is a synchronous connection opened via the standard module
+    directly, it must have been created with ``check_same_thread=False``
+    as it will be used across threads. This is obviously not quite
+    recommended.
+
+    Runs are stored in 2 tables:
+
+    - ``event_runs``, columns ``id``, ``runid``, ``ts`` and ``tags``
+    - ``run_data``, columns ``runid``, ``key``, ``ts`` and ``data``
+
+    ``tags`` of a run are stored as a sorted list of tab-separated items,
+    with leading and trailing tab. This makes it possible to query by
+    tag with the ``LIKE`` operator (for example)::
+
+        SELECT runid FROM event_runs WHERE tags LIKE '%\\thi\\t%';
+
+    Finally, the set of known tags is stored in its own table:
+
+    - ``known_tags``, column ``tag``
+    """
 
     def __init__(
         self,
@@ -52,6 +77,7 @@ class BackendSqlite(Base):
         self.roll_vacuums_size = roll_vacuums_size
 
     async def _roll_vacuum(self):
+        """Roll table entries according to constructor arguments."""
         # we'll be deleting all entries before this ts (so by default none);
         # the roll_.. by below do a `max(delts, ..)` meaning that whichever
         # option makes it delete most prevail
@@ -104,14 +130,15 @@ class BackendSqlite(Base):
 
     @staticmethod
     def _to_tagstr(tags: set[str]) -> str:
+        """``<tab> <a-tag> <tab> <b-tag> <tab> ... <tab>``"""
         return f"\t" + "\t".join(sorted(tags)) + "\t"
 
     @staticmethod
     def _from_tagstr(tagstr: str) -> set[str]:
+        """``<tab> <a-tag> <tab> <b-tag> <tab> ... <tab>``"""
         return set(tagstr[1:-1].split("\t")) if 2 < len(tagstr) else set()
 
     async def storerun(self, id: str, runid: str, run: RunInfoFull):
-        """"""
         # see comment at `__init__`
         async with self._store_grouping_lock:
             await self._conn.execute(
@@ -130,7 +157,6 @@ class BackendSqlite(Base):
             await self._roll_vacuum()
 
     async def loadrun(self, runid: str):
-        """"""
         c = await self._conn.execute(
             r"SELECT ts, tags FROM event_runs WHERE ? = runid",
             (runid,),
@@ -153,7 +179,6 @@ class BackendSqlite(Base):
         max_ts: float,
         any_tag: set[str],
     ):
-        """"""
         # we insert user input in a 'LIKE' operand, so it's important to
         # escape '%' and '_'; i used '!' just because (\\\\ could be confusing)
         # using 'LIKE' means we get the unwanted ci, hence the pragma in aenter

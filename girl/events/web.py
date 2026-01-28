@@ -36,6 +36,17 @@ MethodStr = Literal[
 
 
 class Request:
+    """Shim class for :class:`aiohttp.web.Request`.
+
+    There is no reason to construct one outside library code. Even
+    within library code, one of :meth:`Request._from_aiohttp`,
+    :meth:`Request._from_storage` or :meth:`Request._from_bytes`
+    should be used.
+
+    Web event handlers will receive an instance of this class and
+    are expected to return or yield a value with :meth:`respond`.
+    """
+
     __slots__ = ("_world", "_req", "method", "rel_url", "match_info", "_head", "_body")
 
     def __init__(
@@ -84,15 +95,29 @@ class Request:
         reason: str | None = None,
         headers: dict[str, str] | None = None,
     ):
+        """Respond to the request.
+
+        This method must be called only once, and its result must be
+        returned or yielded from the handler function.
+
+        Exactly one of ``body``, ``text``, ``json`` or ``file`` must be
+        provided.
+
+        If using ``json``, the object needs to be compatible with
+        :func:`json.dumps`, otherwise use ``text`` with manually
+        serialized value.
+
+        Using ``file`` will be more efficient than
+        ``body=world.file(...).read`` but the later will be "tracked"
+        properly (see :class:`girl.events.file.Path`)
+        """
         if 1 < (
             (body is not None)
             + (text is not None)
             + (json is not Request._MISSING)
             + (file is not None)
         ):
-            raise ValueError(
-                "at most one of 'body', 'text', 'json' or 'file' must be given"
-            )
+            raise ValueError("need at most one of 'body', 'text', 'json' or 'file'")
 
         if file is not None:
             return web.FileResponse(file)
@@ -112,6 +137,15 @@ class Request:
 
     @classmethod
     async def _from_aiohttp(cls, world: World, req: web.Request):
+        """Internal constructor for actual aiohttp requests.
+
+        Called from aiohttp wrappers (see :meth:`EventsWeb.event`).
+
+        Constructed with this method, the :class:`Request` object will
+        have a :attr:`Request._req` attribute ("real request"). This
+        may in particular be used alongside with
+        :meth:`aiohttp.web.WebSocketResponse.prepare`.
+        """
         headers = {k.lower(): v for k, v in req.headers.items()}
         body = await req.read()
 
@@ -128,6 +162,11 @@ class Request:
 
     @classmethod
     def _from_storage(cls, world: World):
+        """Internal constructor for a prior run (from storage).
+
+        Called from :meth:`EventsWeb._fake` with no payload, which is
+        handed over to :class:`Handler` (see :meth:`Handler.fake`).
+        """
         meth_url = world.app.store.load(world, "*request-url*")
         match = world.app.store.load(world, "*request-match*")
         head = world.app.store.load(world, "*request-head*")
@@ -141,6 +180,11 @@ class Request:
 
     @classmethod
     def _from_bytes(cls, world: World, payload: bytes):
+        """Internal de-serializing constructor for a made-up run.
+
+        Called from :meth:`EventsWeb._fake` with a payload, which is
+        handed over to :class:`Handler` (see :meth:`Handler.fake`).
+        """
         assert not "implemented", Request._from_bytes
         return cls(world, ...)
 
@@ -155,6 +199,8 @@ _Bind = tuple[str, int] | PurePath
 
 
 class EventsWeb(Base):
+    """Event engine for an http server."""
+
     def __init__(self, app: "app.App"):
         self._app = app
         self._handlers = dict[str, Handler[HttpHandler]]()
@@ -172,7 +218,25 @@ class EventsWeb(Base):
         return txt
 
     def event(self, bind: str | PurePath, method: MethodStr, path: str):
-        """ """
+        """Register a function to be called with a request.
+
+        If ``bind`` is a :class:`str` containing a ``":"``, it is parsed
+        as a ``host:port`` pair and the server will listen on this network
+        socket. Otherwise ``bind`` is interpreted as a file path for a
+        Unix domain socket.
+
+        ``method`` can be the special value ``"*"`` in which case the
+        handler will receive requests for any http method.
+
+        Because ``path`` is passed directly to
+        :meth:`aiohttp.web.UrlDispatcher.add_route`, it accepts the
+        same syntax (must start with a ``"/"``, can use ``"{name}"``..).
+
+        The handler receiving the query must return or yield using
+        :meth:`Request.respond`. If it yields, it will then resume its
+        processing however will no longer be able to return or yield
+        anything else.
+        """
         if isinstance(bind, str) and ":" in bind:
             host, _, port = bind.partition(":")
             bindd = ("127.0.0.1" if "localhost" == host else host, int(port))

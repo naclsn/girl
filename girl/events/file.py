@@ -21,20 +21,37 @@ from .base import Handler
 _logger = getLogger(__name__)
 
 
-# pathlib being trash in py 3.10, see https://stackoverflow.com/a/61689743
+# pathlib being still trash in py 3.11, see https://stackoverflow.com/a/61689743
 class Path(type(StdPath())):
-    """
+    """Wrapper class around :class:`pathlib.Path`.
 
-    only the following accesses are tracked:
-        * :meth:`read_bytes`
-        * :meth:`read_text`
-        * :meth:`read_json`
-        * :meth:`write_bytes`
-        * :meth:`write_text`
-        * :meth:`write_json`
+    This is the class used by :attr:`World.file`
+    (:class:`_WorldFileProxy`). It is preferable not to construct one
+    outside library code, use :meth:`_WorldFileProxy.__call__` instead
+    (see :attr:`World.file`).
+
+    It extends a tiny bit on its base class (eg. :meth:`read_json`)
+    sometimes in an incompatible way (eg. params of :meth:`read_text`).
+
+    Mostly, interactions with the file system through this class are
+    tracked in the sense that the transiting bytes are stored (as
+    a world interaction). Only the following accesses are tracked,
+    and only when the object is associated with a :class:`World`:
+
+    - :meth:`read_bytes`
+    - :meth:`read_text`
+    - :meth:`read_json`
+
+    These ones can be intercepted (eg. at replay):
+
+    - :meth:`write_bytes`
+    - :meth:`write_text`
+    - :meth:`write_json`
     """
 
     __slots__ = ()
+    # this not an actual instance attribute: _WorldFileProxy creates its own
+    # subclass with a class-static attribute _world (hence not in __slots__)
     _world: World | None = None
 
     def read_bytes(self):
@@ -60,9 +77,11 @@ class Path(type(StdPath())):
         self.write_bytes(data.encode())
 
     def read_json(self):
+        """Open the file in text mode, load it, and close the file."""
         return json.loads(self.read_text())
 
     def write_json(self, data: object):
+        """Open the file in write mode, dump to it, and close the file."""
         self.write_text(json.dumps(data))
 
 
@@ -79,6 +98,8 @@ _FileHandler_ = TypeVar("_FileHandler_", bound=FileHandler)
 
 
 class EventsFile(Base):
+    """Event engine watching files."""
+
     def __init__(self, app: "app.App"):
         self._app = app
         self._handlers = dict[str, Handler[FileHandler]]()
@@ -96,7 +117,14 @@ class EventsFile(Base):
         return txt
 
     def event(self, dirname: str | PurePath, fileglob: str):
-        """ """
+        """Register a function to be called when a file changes.
+
+        Regular files cause trigger when closed after it having been
+        opened for writing (:attr:`asyncinotify.Mask.CLOSE_WRITE`).
+
+        So as to work with fifos/sockets, these nodes cause trigger
+        when created (:attr:`asyncinotify.Mask.CREATE`).
+        """
         # need to hackishly elevate to path just to resolve and test is_dir
         dirname = StdPath(dirname).resolve()
         if not dirname.is_dir():
@@ -149,6 +177,10 @@ class EventsFile(Base):
             _logger.error("Task %s raised an exception:", task, exc_info=e)
 
     async def _loop(self):
+        """The core task for this engine (implementation detail).
+
+        See :class:`asyncinotify.Inotify`. There's not much else to say.
+        """
         if self._inotify is None:
             return
 
